@@ -2,6 +2,6 @@ streamlit
 pandas
 openai
 pytesseract
-opencv-python-headless
 numpy
 Pillow
+pdf2image
