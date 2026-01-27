@@ -1,6 +1,7 @@
 [theme]
-primaryColor = "#D94539"
-backgroundColor = "#FFFFFF"
-secondaryBackgroundColor = "#F7F7F7"
-textColor = "#333333"
+primaryColor = "#FFCC00"       # Heuvelman Geel
+backgroundColor = "#FFFFFF"    # Wit
+secondaryBackgroundColor = "#F0F2F6" # Heel lichtgrijs voor zijbalken
+textColor = "#003366"          # Heuvelman Donkerblauw
 font = "sans serif"
+
