@@ -11,7 +11,7 @@ PRIJSLIJST = {
     "Mark": 0.20,
     "Mill": 3.00,
     "Inkjet": 0.10,
-    "Default": 0.00
+    "Default": 0.00,
     "Operations": 100.00
 }
 
