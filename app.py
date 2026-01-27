@@ -2,134 +2,208 @@ import streamlit as st
 import xml.etree.ElementTree as ET
 import pandas as pd
 
-# --- CONFIGURATIE: PRIJSLIJST 2026 (Q1) ---
-# Hier mappen we de codes uit JOUW bestand (SawCut, HipRidgeCut) aan de prijslijst.
+# ==========================================
+# 1. CONFIGURATIE (Pas dit aan voor jouw situatie)
+# ==========================================
 
-PRICING_MODEL = {
-    # --- ZAAGWERK ---
-    # SawCut kwam 214x voor in je bestand. Dit is de standaard zaagsnede.
-    "SawCut":       {'naam': "Schuine kant per snede",   'basis': 0.90, 'bulk': 0.75},
-    
-    # HipRidgeCut kwam 7x voor. Dit zijn vaak complexere hoekkepersnedes.
-    # Ik heb deze nu gemapt op 'Neigen' (duurder tarief), pas aan indien nodig.
-    "HipRidgeCut":  {'naam': "Neigen per snede",         'basis': 1.50, 'bulk': 1.25},
-    
-    # --- BORINGEN (Nog niet gezien in je CSV, maar voor de zekerheid) ---
-    "Drill":        {'naam': "Gaten boren (6-25mm)",     'basis': 0.95, 'bulk': 0.85},
-    "DrillGroup":   {'naam': "Gaten + indoppen",         'basis': 2.70, 'bulk': 2.50},
-    
-    # --- KEPEN (Nog niet gezien, maar voor de zekerheid) ---
-    "Slot":         {'naam': "Keep kopse kant (< 50mm)", 'basis': 1.90, 'bulk': 1.70},
-    "LapJoin":      {'naam': "Keep midden (< 50mm)",     'basis': 3.75, 'bulk': 3.50},
-    "Recess":       {'naam': "Keep midden (> 50mm)",     'basis': 4.25, 'bulk': 4.00}, 
+# VRAAG 2: Standaard 'Ruwe' Maten (Geen schaaftoeslag)
+# Als een balk NIET deze maat heeft, gaan we ervan uit dat hij geschaafd moet worden.
+# Format: (Dikte, Breedte) in mm. Let op puntjes ipv komma's!
+STANDAARD_RUW_MATEN = [
+    (38.0, 89.0),   # SLS
+    (38.0, 120.0),
+    (38.0, 140.0),  # Vuren C18/C24
+    (38.0, 170.0),
+    (38.0, 235.0),
+    (45.0, 70.0),   # Balkhout
+    (50.0, 100.0),
+    (75.0, 200.0)
+]
 
-    # --- FALLBACK ---
-    "Default":      {'naam': "Overige bewerking",        'basis': 0.00, 'bulk': 0.00}
+# Codes die ALTIJD schaaftarief triggeren (Vraag 2: G10-1, G10-5)
+# We zoeken deze tekst in de Naam, Grade of Comments van de balk.
+SCHAAF_CODES = ["G10-1", "G10-5", "GESCHAAFD"]
+
+# Prijslijst configuratie
+PRIJZEN = {
+    # Materiaalbewerkingen (per stuk)
+    "SawCut_Recht":  0.50, # Afkorten (Rechte zaagsnede)
+    "SawCut_Schuin": 0.90, # Schuin zagen (Angle != 90)
+    "HipRidgeCut":   1.50, # Hoekkeper / Nok
+    "Drill":         0.95, # Boren
+    "Slot":          1.90, # Kepen
+    "Lap":           3.75, # Halfhoutsverbinding
+    
+    # Toeslagen (Vraag 2)
+    "Toeslag_Schaven_m1": 1.25,  # Prijs per meter voor schaven? (Of per stuk?)
+    "Stelkosten_Schaven": 50.00, # Eenmalige startkosten als er geschaafd moet worden
+    "Stelkosten_Korten":  25.00  # Eenmalige startkosten zaagwerk
 }
 
-STARTUP_FEE = 20.00
-BULK_THRESHOLD = 49
+# ==========================================
+# 2. DE APPLICATIE
+# ==========================================
 
-st.set_page_config(page_title="Hout Calculator 2026", page_icon="🌲")
+st.set_page_config(page_title="Hout Calculator Pro", page_icon="🌲", layout="wide")
+st.title("🌲 Hout Calculatie Pro")
+st.markdown("Upload een `.bvx` bestand voor een specificatie incl. schaaf- en stelkosten.")
 
-st.title("🌲 Houtbewerking Calculator")
-st.markdown("""
-**Prijslijst:** Q1 2026  
-**Regels:** Staffelkorting bij > 49 stuks per bewerking. Starttarief €20,00 bij kleine orders.
-""")
+uploaded_file = st.file_uploader("Sleep je bestand hierheen", type=['bvx', 'xml'])
 
-uploaded_file = st.file_uploader("Sleep je .bvx bestand hierheen", type=['bvx', 'xml', 'hmm'])
-
-if uploaded_file is not None:
+if uploaded_file:
+    # Bestand inlezen
     content = uploaded_file.getvalue().decode("utf-8", errors='ignore')
     
-    operations = []
     try:
         root = ET.fromstring(content)
         
-        # UITGEBREIDE NEGEERLIJST
-        # Deze tags zagen we in je CSV, maar zijn geen betaalde bewerkingen.
-        ignore_list = [
-            'BVX', 'Project', 'Header', 'Version', 'Timestamp', 'Cost', 'Description', 
-            'Geometry', 'Name', 'Part', 'Parts', 'Job', 'Operations', 'AttDefs', 'Packages', 
-            'Package', 'Container'
-        ]
+        parts_data = []
+        project_naam = root.find(".//Job").get("Project", "Onbekend") if root.find(".//Job") is not None else "Onbekend"
         
-        for elem in root.iter():
-            # Filter logic: 
-            # 1. Mag niet in ignore lijst staan
-            # 2. Tag moet langer zijn dan 2 letters
-            if elem.tag not in ignore_list and len(elem.tag) > 2:
-                operations.append(elem.tag)
-                
-    except ET.ParseError:
-        st.error("⚠️ Dit bestand is geen geldige XML.")
-        st.stop()
+        # Loop door alle onderdelen (Parts)
+        for part in root.findall('.//Part'):
+            # 1. Eigenschappen ophalen (Specificatie Vraag 1)
+            p_name = part.get('Name', '')
+            p_width = float(part.get('Width', 0))
+            p_height = float(part.get('Height', 0))
+            p_length = float(part.get('Length', 0))
+            p_qty = int(part.get('ReqQuantity', 1)) # Aantal stuks
+            p_grade = part.get('Grade', '') 
+            p_comments = part.get('Comments', '')
+            
+            # Combineer tekstvelden om te zoeken naar G10 codes
+            full_text_search = f"{p_name} {p_grade} {p_comments}".upper()
+            
+            # 2. Bewerkingen analyseren
+            ops_in_part = []
+            operations_container = part.find('Operations')
+            
+            if operations_container is not None:
+                for op in operations_container:
+                    tag = op.tag
+                    
+                    # Slimme detectie: Recht vs Schuin zagen
+                    if tag == 'SawCut':
+                        angle = float(op.get('Angle', 90))
+                        bevel = float(op.get('Bevel', 90))
+                        # Marge van 0.1 graad voor afronding
+                        if abs(angle - 90.0) < 0.1 and abs(bevel - 90.0) < 0.1:
+                            code = "SawCut_Recht"
+                        else:
+                            code = "SawCut_Schuin"
+                    elif tag in ['TextOutput', 'BvnMacro']:
+                        continue # Negeren
+                    else:
+                        code = tag # Overige (Drill, HipRidge, Lap, etc)
+                    
+                    ops_in_part.append(code)
 
-    if not operations:
-        st.warning("Geen bewerkingen gevonden.")
-        st.stop()
-
-    counts = pd.Series(operations).value_counts().to_dict()
-    
-    data_rows = []
-    total_parts_cost = 0.0
-    total_count = sum(counts.values())
-
-    for op, count in counts.items():
-        # Zoek exacte match
-        rule = PRICING_MODEL.get(op)
-        
-        # Geen exacte match? Zoek op deel van de naam
-        if not rule:
-            match_found = False
-            for key, val in PRICING_MODEL.items():
-                if key in op: # Bijv. "JackRafterCut" matcht met "Cut" als we dat willen
-                    rule = val
-                    match_found = True
+            # 3. LOGICA VRAAG 2: Schaven & Toeslagen
+            toeslagen = []
+            moet_schaven = False
+            
+            # Check A: Zit er een G10 code in?
+            for code in SCHAAF_CODES:
+                if code in full_text_search:
+                    moet_schaven = True
+                    toeslagen.append(f"Code {code}")
                     break
-            if not match_found:
-                rule = PRICING_MODEL["Default"]
+            
+            # Check B: Wijkt de maat af van standaard?
+            # We checken of (width, height) OF (height, width) in de lijst staat (hout kan gedraaid zijn)
+            is_standaard = False
+            for dim in STANDAARD_RUW_MATEN:
+                if (abs(p_width - dim[0]) < 1.0 and abs(p_height - dim[1]) < 1.0) or \
+                   (abs(p_width - dim[1]) < 1.0 and abs(p_height - dim[0]) < 1.0):
+                    is_standaard = True
+                    break
+            
+            if not is_standaard and not moet_schaven:
+                moet_schaven = True
+                toeslagen.append("Afwijkende Maat")
 
-        # Staffelkorting
-        is_bulk = count > BULK_THRESHOLD
-        unit_price = rule['bulk'] if is_bulk else rule['basis']
+            # Data opslaan
+            parts_data.append({
+                "Positie": p_name,
+                "Aantal": p_qty,
+                "Dikte": p_width,
+                "Breedte": p_height,
+                "Lengte (mm)": round(p_length, 0),
+                "Kwaliteit": p_grade,
+                "Bewerkingen": ", ".join(set(ops_in_part)),
+                "Toeslagen": ", ".join(toeslagen) if toeslagen else "-",
+                "Raw_Ops": ops_in_part,
+                "Moet_Schaven": moet_schaven,
+                "Meters": (p_length / 1000.0) * p_qty # Voor prijscalculatie
+            })
+
+        # DataFrame maken
+        df = pd.DataFrame(parts_data)
         
-        line_total = count * unit_price
-        total_parts_cost += line_total
+        # ==========================================
+        # 3. PRIJS BEREKENING
+        # ==========================================
+        total_price = 0.0
+        details_log = []
         
-        data_rows.append({
-            "Bewerking (Code)": op,
-            "Omschrijving": rule['naam'],
-            "Aantal": count,
-            "Tarief": "Bulk (>49)" if is_bulk else "Basis",
-            "Stukprijs": f"€ {unit_price:.2f}",
-            "Totaal": f"€ {line_total:.2f}"
-        })
+        # Variabelen voor stelkosten
+        heeft_schaafwerk = df['Moet_Schaven'].any()
+        heeft_zaagwerk = True # Nagenoeg altijd waar bij BVX
+        
+        # A. Regelkosten (Materiaal + Bewerking)
+        for idx, row in df.iterrows():
+            line_cost = 0.0
+            qty = row['Aantal']
+            
+            # 1. Bewerkingskosten
+            for op in row['Raw_Ops']:
+                line_cost += PRIJZEN.get(op, 0.0) * qty
+            
+            # 2. Schaafkosten (Per meter of per stuk? Hier per m1 gedaan)
+            if row['Moet_Schaven']:
+                line_cost += row['Meters'] * PRIJZEN['Toeslag_Schaven_m1']
+            
+            total_price += line_cost
+            
+        # B. Stelkosten (Eenmalig per project)
+        stelkosten = 0.0
+        if heeft_zaagwerk:
+            stelkosten += PRIJZEN['Stelkosten_Korten']
+        if heeft_schaafwerk:
+            stelkosten += PRIJZEN['Stelkosten_Schaven']
+            
+        total_price += stelkosten
 
-    # Starttarief
-    startup_cost = 0.0
-    if total_count <= BULK_THRESHOLD:
-        startup_cost = STARTUP_FEE
+        # ==========================================
+        # 4. DASHBOARD WEERGAVE
+        # ==========================================
+        
+        # KPI's
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Project", project_naam)
+        c2.metric("Totaal Balken", df['Aantal'].sum())
+        c3.metric("Stelkosten", f"€ {stelkosten:.2f}")
+        c4.metric("Totaalprijs (excl. BTW)", f"€ {total_price:.2f}")
+        
+        st.divider()
+        
+        # VRAAG 1: Specificatie Lijst
+        st.subheader("📋 Materiaalspecificatie & Bewerkingen")
+        
+        # We maken een mooie tabel voor de klant
+        view_df = df[['Positie', 'Aantal', 'Dikte', 'Breedte', 'Lengte (mm)', 'Kwaliteit', 'Toeslagen', 'Bewerkingen']].copy()
+        
+        # Highlight regels met schaafwerk
+        st.dataframe(view_df.style.apply(lambda x: ['background-color: #fff4e5' if 'Code' in str(x['Toeslagen']) or 'Afwijkend' in str(x['Toeslagen']) else '' for i in x], axis=1), use_container_width=True)
+        
+        # VRAAG 2: Nettomaten controle
+        if heeft_schaafwerk:
+            st.warning(f"⚠️ Let op: Er zijn {df['Moet_Schaven'].sum()} regels die geschaafd moeten worden (G10 code of afwijkende maat). Stelkosten à €{PRIJZEN['Stelkosten_Schaven']} zijn toegevoegd.")
+        
+        # Export knop
+        csv = view_df.to_csv(index=False).encode('utf-8')
+        st.download_button("📥 Download Calculatie (CSV)", csv, f"calculatie_{project_naam}.csv", "text/csv")
 
-    final_total = total_parts_cost + startup_cost
-
-    # --- WEERGAVE ---
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Betaalde Bewerkingen", total_count)
-    col2.metric("Starttarief", f"€ {startup_cost:.2f}")
-    col3.metric("Eindtotaal (excl. BTW)", f"€ {final_total:.2f}")
-    
-    st.divider()
-    
-    df = pd.DataFrame(data_rows)
-    # Sorteer zodat de duurste bovenaan staan
-    df = df.sort_values(by="Totaal", ascending=False)
-    
-    st.subheader("Specificatie")
-    st.dataframe(df, use_container_width=True)
-    
-    csv = df.to_csv(index=False).encode('utf-8')
-    st.download_button("📥 Download calculatie als CSV", csv, "calculatie_2026.csv", "text/csv")
-
+    except Exception as e:
+        st.error(f"Er ging iets mis bij het lezen van het bestand: {e}")
 
