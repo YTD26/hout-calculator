@@ -39,6 +39,61 @@ PRIJZEN = {
     "Stelkosten_Schaven": 50.00, # Eenmalige startkosten als er geschaafd moet worden
     "Stelkosten_Korten":  25.00  # Eenmalige startkosten zaagwerk
 }
+# ==========================================
+# OCR & AI FUNCTIES (TOEVOEGEN BOVEN DE APPLICATIE SECTIE)
+# ==========================================
+import easyocr
+import numpy as np
+from PIL import Image
+from openai import OpenAI
+
+# Cache de OCR reader voor snelheid
+@st.cache_resource
+def load_ocr_reader():
+    return easyocr.Reader(['nl', 'en'])
+
+def extract_text_from_image(image_file):
+    """Gebruikt EasyOCR (gratis) om tekst uit plaatje te halen."""
+    try:
+        image = Image.open(image_file)
+        image_np = np.array(image)
+        reader = load_ocr_reader()
+        result = reader.readtext(image_np, detail=0) # detail=0 geeft alleen tekst terug
+        return " ".join(result) # Plak alles aan elkaar als één lange tekst
+    except Exception as e:
+        return f"Error: {e}"
+
+def clean_data_with_perplexity(raw_text):
+    """Stuurt rommelige OCR tekst naar Perplexity om te ordenen."""
+    # Vul hier je key in (of gebruik st.secrets)
+    PERPLEXITY_API_KEY = st.secrets["PERPLEXITY_API_KEY"]
+    
+    client = OpenAI(api_key=PERPLEXITY_API_KEY, base_url="https://api.perplexity.ai")
+
+    prompt = f"""
+    Ik heb een OCR scan gemaakt van een houtbestelling. De tekst is rommelig.
+    Haal hier de relevante balken uit en formatteer het als JSON data.
+    
+    Zoek naar: Aantal, Omschrijving (bijv Vuren), Afmeting (Dikte x Breedte), Lengte.
+    Als je 'G10' of 'Geschaafd' ziet, zet 'Toeslag' op 'Schaven'.
+    
+    Rommelige tekst:
+    {raw_text[:3000]} (ingekort)
+    
+    Geef ALLEEN valide JSON terug in dit formaat:
+    [
+      {{"Aantal": 5, "Omschrijving": "Vuren", "Dikte": 38, "Breedte": 140, "Lengte": 3000, "Toeslagen": "Schaven"}}
+    ]
+    """
+
+    try:
+        response = client.chat.completions.create(
+            model="sonar-pro", # Slimste tekstmodel van Perplexity
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"AI Error: {e}"
 
 # ==========================================
 # 2. DE APPLICATIE
@@ -168,7 +223,56 @@ st.markdown("""
 # ... HIERONDER KOMT DE REST VAN JE BESTAANDE CODE (Vanaf uploaded_file = ...)
 
 
-uploaded_file = st.file_uploader("Sleep je bestand hierheen", type=['bvx', 'xml'])
+# AANGEPASTE FILE UPLOADER
+uploaded_file = st.file_uploader("Sleep bestand hierheen", type=['bvx', 'xml', 'jpg', 'png', 'jpeg'])
+
+if uploaded_file:
+    file_type = uploaded_file.name.split('.')[-1].lower()
+    
+    # === ROUTE 1: BESTAANDE BVX LOGICA (JE OUDE CODE) ===
+    if file_type in ['bvx', 'xml']:
+        # ... HIER JE OUDE CODE VOOR XML LATEN STAAN ...
+        # (Dit is het stukje: content = uploaded_file.getvalue().decode... t/m de dataframe)
+        pass # Haal deze pass weg als je je oude code hier laat staan
+
+    # === ROUTE 2: NIEUWE FOTO LOGICA ===
+    elif file_type in ['jpg', 'png', 'jpeg']:
+        st.info("📸 Afbeelding aan het scannen met OCR...")
+        
+        # 1. Tekst lezen (Lokaal)
+        raw_text = extract_text_from_image(uploaded_file)
+        
+        with st.expander("Bekijk ruwe gescande tekst"):
+            st.text(raw_text)
+            
+        if len(raw_text) > 10:
+            st.info("🧠 Perplexity is de data aan het structureren...")
+            
+            # 2. Structureren (Perplexity API)
+            json_response = clean_data_with_perplexity(raw_text)
+            
+            # Probeer de JSON in een tabel te gieten
+            try:
+                # Soms geeft AI extra tekst eromheen, we zoeken de JSON haakjes
+                import json
+                start = json_response.find('[')
+                end = json_response.rfind(']') + 1
+                clean_json = json_response[start:end]
+                
+                df_ocr = pd.read_json(clean_json)
+                
+                st.subheader("Gevonden Specificaties")
+                st.dataframe(df_ocr, use_container_width=True)
+                
+                # Download knopje erbij
+                csv = df_ocr.to_csv(index=False).encode('utf-8')
+                st.download_button("Download CSV", csv, "scan_resultaat.csv", "text/csv")
+                
+            except Exception as e:
+                st.error("Kon de data niet in een tabel zetten. Hier is wat de AI zei:")
+                st.write(json_response)
+        else:
+            st.warning("Kon geen tekst lezen op deze afbeelding.")
 
 if uploaded_file:
     # Bestand inlezen
