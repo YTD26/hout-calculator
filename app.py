@@ -50,7 +50,8 @@ from openai import OpenAI
 # Cache de OCR reader voor snelheid
 @st.cache_resource
 def load_ocr_reader():
-    return easyocr.Reader(['nl', 'en'])
+    # gpu=False is CRUCIAAL voor Streamlit Cloud om crashes te voorkomen
+    return easyocr.Reader(['nl', 'en'], gpu=False)
 
 def extract_text_from_image(image_file):
     """Gebruikt EasyOCR (gratis) om tekst uit plaatje te halen."""
