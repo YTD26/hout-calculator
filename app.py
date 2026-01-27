@@ -1,6 +1,7 @@
 import streamlit as st
 import xml.etree.ElementTree as ET
 import pandas as pd
+from pdf2image import convert_from_bytes
 
 # ==========================================
 # 1. CONFIGURATIE (Pas dit aan voor jouw situatie)
@@ -220,7 +221,7 @@ st.markdown("""
 
 
 # AANGEPASTE FILE UPLOADER
-uploaded_file = st.file_uploader("Sleep bestand hierheen", type=['bvx', 'xml', 'jpg', 'png', 'jpeg'])
+uploaded_file = st.file_uploader("Sleep bestand hierheen", type=['bvx', 'xml', 'jpg', 'png', 'jpeg','pdf'])
 
 if uploaded_file:
     file_type = uploaded_file.name.split('.')[-1].lower()
@@ -234,7 +235,70 @@ if uploaded_file:
     # === ROUTE 2: NIEUWE FOTO LOGICA ===
     elif file_type in ['jpg', 'png', 'jpeg']:
         st.info("📸 Afbeelding aan het scannen met OCR...")
+            # === ROUTE 3: PDF BESTAND ===
+    elif file_type == 'pdf':
+        st.info("📄 PDF gedetecteerd. Pagina's omzetten naar beelden voor OCR...")
         
+        try:
+            # 1. PDF omzetten naar lijst met afbeeldingen
+            images = convert_from_bytes(uploaded_file.getvalue())
+            
+            full_text = ""
+            
+            # 2. Progress bar (handig bij veel pagina's)
+            progress_bar = st.progress(0)
+            
+            for i, image in enumerate(images):
+                st.image(image, caption=f"Pagina {i+1}", width=700)
+                
+                # Hergebruik je bestaande Tesseract functie!
+                # We moeten de PIL image wel even opslaan in een tijdelijke buffer
+                # of de functie aanpassen. 
+                # MAKKELIJKER: Pas je extract_text_from_image functie iets aan (zie stap D).
+                
+                page_text = extract_text_from_image(image) 
+                full_text += f"\n--- PAGINA {i+1} ---\n" + page_text
+                
+                progress_bar.progress((i + 1) / len(images))
+            
+            st.success("Alle pagina's gescand!")
+            
+            # 3. Nu de hele lap tekst naar Perplexity sturen
+            if len(full_text) > 20:
+                with st.expander("Bekijk ruwe tekst"):
+                    st.text(full_text)
+                
+                st.info("🧠 Perplexity analyseert nu alle pagina's...")
+                json_response = clean_data_with_perplexity(full_text)
+                
+                # ... (Dezelfde JSON parsing logica als bij Route 2) ...
+                # Je kunt de parsing code hieronder kopiëren van Route 2, 
+                # of er een aparte functie van maken om dubbele code te voorkomen.
+                
+                # Kopiëer hier het stukje 'try: ... df_ocr = ...' van Route 2
+                # Zorg dat je 'json_response' gebruikt.
+                 # Probeer de JSON in een tabel te gieten
+                try:
+                    import json
+                    start = json_response.find('[')
+                    end = json_response.rfind(']') + 1
+                    clean_json = json_response[start:end]
+                    
+                    df_ocr = pd.read_json(clean_json)
+                    
+                    st.subheader("Gevonden Specificaties (Uit PDF)")
+                    st.dataframe(df_ocr, use_container_width=True)
+                    
+                    csv = df_ocr.to_csv(index=False).encode('utf-8')
+                    st.download_button("Download CSV", csv, "pdf_scan_resultaat.csv", "text/csv")
+                    
+                except Exception as e:
+                    st.error("Kon PDF data niet verwerken. AI Output:")
+                    st.write(json_response)
+                    
+        except Exception as e:
+            st.error(f"Fout bij verwerken PDF: {e}")
+
         # 1. Tekst lezen (Lokaal)
         raw_text = extract_text_from_image(uploaded_file)
         
@@ -269,6 +333,20 @@ if uploaded_file:
                 st.write(json_response)
         else:
             st.warning("Kon geen tekst lezen op deze afbeelding.")
+def extract_text_from_image(image_input):
+    """Werkt met zowel een geüpload bestand ALS een direct PIL Image object."""
+    try:
+        # Check: Is het al een plaatje? (Zoals uit PDF komt)
+        if isinstance(image_input, Image.Image):
+            image = image_input
+        else:
+            # Nee, het is een geüpload bestand, dus openen
+            image = Image.open(image_input)
+            
+        text = pytesseract.image_to_string(image, lang='eng')
+        return text
+    except Exception as e:
+        return f"Error bij Tesseract: {e}"
 
 if uploaded_file:
     # Bestand inlezen
