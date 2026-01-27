@@ -42,27 +42,22 @@ PRIJZEN = {
 # ==========================================
 # OCR & AI FUNCTIES (TOEVOEGEN BOVEN DE APPLICATIE SECTIE)
 # ==========================================
-import easyocr
+import pytesseract
 import numpy as np
 from PIL import Image
 from openai import OpenAI
 
-# Cache de OCR reader voor snelheid
-@st.cache_resource
-def load_ocr_reader():
-    # gpu=False is CRUCIAAL voor Streamlit Cloud om crashes te voorkomen
-    return easyocr.Reader(['nl', 'en'], gpu=False)
-
 def extract_text_from_image(image_file):
-    """Gebruikt EasyOCR (gratis) om tekst uit plaatje te halen."""
+    """Gebruikt Tesseract (server software) om tekst uit plaatje te halen."""
     try:
         image = Image.open(image_file)
-        image_np = np.array(image)
-        reader = load_ocr_reader()
-        result = reader.readtext(image_np, detail=0) # detail=0 geeft alleen tekst terug
-        return " ".join(result) # Plak alles aan elkaar als één lange tekst
+        # Converteer naar tekst
+        text = pytesseract.image_to_string(image, lang='eng') 
+        # 'eng' werkt vaak beter dan 'nld' zonder extra taalbestanden, 
+        # en houttermen zijn vaak toch universeel genoeg voor basis OCR.
+        return text
     except Exception as e:
-        return f"Error: {e}"
+        return f"Error bij Tesseract OCR: {e}"
 
 def clean_data_with_perplexity(raw_text):
     """Stuurt rommelige OCR tekst naar Perplexity om te ordenen."""
