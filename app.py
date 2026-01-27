@@ -44,9 +44,102 @@ PRIJZEN = {
 # 2. DE APPLICATIE
 # ==========================================
 
-st.set_page_config(page_title="Hout Calculator Pro", page_icon="🌲", layout="wide")
-st.title("🌲 Hout Calculatie Pro")
-st.markdown("Upload een `.bvx` bestand voor een specificatie incl. schaaf- en stelkosten.")
+import streamlit as st
+import xml.etree.ElementTree as ET
+import pandas as pd
+
+# ---------------------------------------------------------
+# STYLING CONFIGURATIE (HEUVELMAN HOUT STIJL)
+# ---------------------------------------------------------
+st.set_page_config(
+    page_title="Heuvelman Hout Calculator", 
+    page_icon="🌲", 
+    layout="wide"
+)
+
+# Custom CSS injecteren voor de exacte Heuvelman look
+st.markdown("""
+    <style>
+    /* Hoofdtitels in Heuvelman Rood */
+    h1, h2, h3 {
+        color: #D94539 !important;
+        font-family: 'Montserrat', sans-serif;
+        font-weight: 700;
+    }
+    
+    /* Metrics (KPI's) styling */
+    [data-testid="stMetricValue"] {
+        color: #D94539;
+        font-weight: bold;
+    }
+    
+    /* Upload Box styling */
+    [data-testid="stFileUploader"] {
+        border: 2px dashed #D94539;
+        background-color: #FEF6F5;
+        padding: 20px;
+        border-radius: 10px;
+    }
+    
+    /* Tabellen headers rood maken */
+    thead tr th:first-child {display:none}
+    thead tr th {
+        background-color: #D94539 !important;
+        color: white !important;
+    }
+
+    /* Knoppen styling */
+    div.stButton > button {
+        background-color: #D94539;
+        color: white;
+        border-radius: 5px;
+        border: none;
+        padding: 10px 24px;
+        font-weight: bold;
+    }
+    div.stButton > button:hover {
+        background-color: #B0342A; /* Iets donkerder bij hover */
+        color: white;
+    }
+    
+    /* Download button specifiek */
+    div.stDownloadButton > button {
+        background-color: #333333;
+        color: white;
+    }
+    
+    /* Logo container (optioneel, als je een logo URL hebt) */
+    .logo-container {
+        display: flex;
+        align-items: center;
+        margin-bottom: 20px;
+    }
+    .logo-text {
+        font-size: 24px;
+        font-weight: bold;
+        color: #333333;
+        margin-left: 10px;
+    }
+    .red-dot { color: #D94539; }
+    </style>
+""", unsafe_allow_html=True)
+
+# ---------------------------------------------------------
+# HEADER MET LOGO (Tekstueel nagemaakt)
+# ---------------------------------------------------------
+st.markdown("""
+    <div class="logo-container">
+        <!-- Je zou hier ook een echte <img> tag kunnen gebruiken als je de URL hebt -->
+        <span class="logo-text">HEUVELMAN<span class="red-dot">HOUT</span></span>
+    </div>
+    <hr style="border-top: 3px solid #D94539; margin-top: 0;">
+""", unsafe_allow_html=True)
+
+st.title("Calculatie Tool")
+st.markdown("**Wij leveren oplossingen.** Upload uw BVX-bestand voor een directe calculatie.")
+
+# ... HIERONDER KOMT DE REST VAN JE BESTAANDE CODE (Vanaf uploaded_file = ...)
+
 
 uploaded_file = st.file_uploader("Sleep je bestand hierheen", type=['bvx', 'xml'])
 
