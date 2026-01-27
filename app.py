@@ -278,7 +278,21 @@ if uploaded_file:
         root = ET.fromstring(content)
         
         parts_data = []
-        project_naam = root.find(".//Job").get("Project", "Onbekend") if root.find(".//Job") is not None else "Onbekend"
+        # NIEUWE CODE (Die ook in commentaar zoekt)
+        import re
+        
+        # 1. Probeer eerst de standaard plek (Attribuut in <Job>)
+        job_node = root.find(".//Job")
+        project_naam = job_node.get("Project", "") if job_node is not None else ""
+        
+        # 2. Als hij leeg is, zoek dan in de commentaar-regels bovenin het bestand
+        if not project_naam:
+            # Zoek naar patronen zoals <!-- project: P250014 --> of <!-- project P250014 -->
+            match = re.search(r'<!--\s*project:?\s*([A-Za-z0-9-]+)', content, re.IGNORECASE)
+            if match:
+                project_naam = match.group(1)
+            else:
+                project_naam = "Onbekend"
         
         # Loop door alle onderdelen (Parts)
         for part in root.findall('.//Part'):
