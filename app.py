@@ -53,91 +53,118 @@ import pandas as pd
 # ---------------------------------------------------------
 st.set_page_config(
     page_title="Heuvelman Hout Calculator", 
-    page_icon="🌲", 
+    page_icon="🪵", 
     layout="wide"
 )
 
-# Custom CSS injecteren voor de exacte Heuvelman look
+# Custom CSS voor de Heuvelman "Look & Feel"
 st.markdown("""
     <style>
-    /* Hoofdtitels in Heuvelman Rood */
+    /* 1. Header Balk (Blauw met Geel accent) */
+    .header-container {
+        background-color: #003366;
+        padding: 20px;
+        border-bottom: 5px solid #FFCC00;
+        margin-bottom: 30px;
+        border-radius: 5px;
+        color: white;
+    }
+    
+    /* Logo Tekst Styling */
+    .logo-main {
+        font-size: 32px;
+        font-weight: 800;
+        color: #FFCC00; /* Geel */
+        font-family: 'Arial Black', sans-serif;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+    .logo-sub {
+        color: white;
+        font-size: 18px;
+        font-weight: 400;
+        margin-left: 10px;
+    }
+
+    /* 2. Algemene Typografie */
     h1, h2, h3 {
-        color: #D94539 !important;
-        font-family: 'Montserrat', sans-serif;
+        color: #003366 !important; /* Donkerblauw */
+        font-family: 'Helvetica', 'Arial', sans-serif;
         font-weight: 700;
     }
     
-    /* Metrics (KPI's) styling */
-    [data-testid="stMetricValue"] {
-        color: #D94539;
-        font-weight: bold;
-    }
-    
-    /* Upload Box styling */
-    [data-testid="stFileUploader"] {
-        border: 2px dashed #D94539;
-        background-color: #FEF6F5;
-        padding: 20px;
-        border-radius: 10px;
-    }
-    
-    /* Tabellen headers rood maken */
-    thead tr th:first-child {display:none}
-    thead tr th {
-        background-color: #D94539 !important;
-        color: white !important;
-    }
-
-    /* Knoppen styling */
+    /* 3. Knoppen (Geel met Blauwe tekst) */
     div.stButton > button {
-        background-color: #D94539;
-        color: white;
-        border-radius: 5px;
+        background-color: #FFCC00;
+        color: #003366;
+        border-radius: 0px; /* Strakke hoeken zoals screenshot */
         border: none;
         padding: 10px 24px;
         font-weight: bold;
+        text-transform: uppercase;
     }
     div.stButton > button:hover {
-        background-color: #B0342A; /* Iets donkerder bij hover */
-        color: white;
+        background-color: #E6B800;
+        color: #003366;
+    }
+
+    /* 4. Tabellen Styling */
+    thead tr th {
+        background-color: #003366 !important;
+        color: white !important;
     }
     
-    /* Download button specifiek */
-    div.stDownloadButton > button {
-        background-color: #333333;
-        color: white;
+    /* 5. File Uploader */
+    [data-testid="stFileUploader"] {
+        border: 2px dashed #003366;
+        background-color: #F4F8FB; /* Heel lichtblauw */
     }
     
-    /* Logo container (optioneel, als je een logo URL hebt) */
-    .logo-container {
-        display: flex;
-        align-items: center;
-        margin-bottom: 20px;
+    /* 6. Metrics waarde kleur */
+    [data-testid="stMetricValue"] {
+        color: #003366;
     }
-    .logo-text {
-        font-size: 24px;
-        font-weight: bold;
-        color: #333333;
-        margin-left: 10px;
+    
+    /* 7. Footer lijntje */
+    hr {
+        border-top: 2px solid #FFCC00;
     }
-    .red-dot { color: #D94539; }
     </style>
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# HEADER MET LOGO (Tekstueel nagemaakt)
+# HEADER (LOGO NAGEBOUWD IN HTML)
 # ---------------------------------------------------------
 st.markdown("""
-    <div class="logo-container">
-        <!-- Je zou hier ook een echte <img> tag kunnen gebruiken als je de URL hebt -->
-        <span class="logo-text">HEUVELMAN<span class="red-dot">HOUT</span></span>
+    <div class="header-container">
+        <div style="display: flex; align-items: center;">
+            <!-- Simpel H-Logo Icoon met CSS -->
+            <div style="
+                background-color: #FFCC00; 
+                width: 50px; 
+                height: 50px; 
+                display: flex; 
+                align-items: center; 
+                justify-content: center; 
+                margin-right: 15px;
+                font-size: 30px;
+                font-weight: bold;
+                color: #003366;
+            ">H</div>
+            <div>
+                <span class="logo-main">HEUVELMAN</span><br>
+                <span class="logo-sub">maakt hout mooier</span>
+            </div>
+        </div>
     </div>
-    <hr style="border-top: 3px solid #D94539; margin-top: 0;">
 """, unsafe_allow_html=True)
 
+# Pagina Titel (onder de header balk)
 st.title("Calculatie Tool")
-st.markdown("**Wij leveren oplossingen.** Upload uw BVX-bestand voor een directe calculatie.")
-
+st.markdown("""
+    **We leveren niet zomaar hout: We leveren oplossingen.**  
+    Upload hieronder uw BVX-bestand voor een directe calculatie inclusief bewerkingen en toeslagen.
+""")
 # ... HIERONDER KOMT DE REST VAN JE BESTAANDE CODE (Vanaf uploaded_file = ...)
 
 
