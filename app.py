@@ -12,6 +12,7 @@ PRIJSLIJST = {
     "Mill": 3.00,
     "Inkjet": 0.10,
     "Default": 0.00
+    "Operations": 100.00
 }
 
 st.set_page_config(page_title="Hout Calculator", page_icon="🌲")
