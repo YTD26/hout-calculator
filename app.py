@@ -1,521 +1,344 @@
 import streamlit as st
 import xml.etree.ElementTree as ET
 import pandas as pd
-from pdf2image import convert_from_bytes
-
-# ==========================================
-# 1. CONFIGURATIE (Pas dit aan voor jouw situatie)
-# ==========================================
-
-# VRAAG 2: Standaard 'Ruwe' Maten (Geen schaaftoeslag)
-# Als een balk NIET deze maat heeft, gaan we ervan uit dat hij geschaafd moet worden.
-# Format: (Dikte, Breedte) in mm. Let op puntjes ipv komma's!
-STANDAARD_RUW_MATEN = [
-    (38.0, 89.0),   # SLS
-    (38.0, 120.0),
-    (38.0, 140.0),  # Vuren C18/C24
-    (38.0, 170.0),
-    (38.0, 235.0),
-    (45.0, 70.0),   # Balkhout
-    (50.0, 100.0),
-    (75.0, 200.0)
-]
-
-# Codes die ALTIJD schaaftarief triggeren (Vraag 2: G10-1, G10-5)
-# We zoeken deze tekst in de Naam, Grade of Comments van de balk.
-SCHAAF_CODES = ["G10-1", "G10-5", "GESCHAAFD"]
-
-# Prijslijst configuratie
-PRIJZEN = {
-    # Materiaalbewerkingen (per stuk)
-    "SawCut_Recht":  0.50, # Afkorten (Rechte zaagsnede)
-    "SawCut_Schuin": 0.90, # Schuin zagen (Angle != 90)
-    "HipRidgeCut":   1.50, # Hoekkeper / Nok
-    "Drill":         0.95, # Boren
-    "Slot":          1.90, # Kepen
-    "Lap":           3.75, # Halfhoutsverbinding
-    
-    # Toeslagen (Vraag 2)
-    "Toeslag_Schaven_m1": 1.25,  # Prijs per meter voor schaven? (Of per stuk?)
-    "Stelkosten_Schaven": 50.00, # Eenmalige startkosten als er geschaafd moet worden
-    "Stelkosten_Korten":  25.00  # Eenmalige startkosten zaagwerk
-}
-# ==========================================
-# OCR & AI FUNCTIES (TOEVOEGEN BOVEN DE APPLICATIE SECTIE)
-# ==========================================
 import pytesseract
-import numpy as np
+import json
+import re
 from PIL import Image
+from pdf2image import convert_from_bytes
 from openai import OpenAI
 
-def extract_text_from_image(image_file):
-    """Gebruikt Tesseract (server software) om tekst uit plaatje te halen."""
+# ==========================================
+# CONFIGURATIE
+# ==========================================
+
+STANDAARD_RUW_MATEN = [
+    (38.0, 89.0), (38.0, 120.0), (38.0, 140.0), (38.0, 170.0),
+    (38.0, 235.0), (45.0, 70.0), (50.0, 100.0), (75.0, 200.0)
+]
+
+SCHAAF_CODES = ["G10-1", "G10-5", "GESCHAAFD"]
+
+PRIJZEN = {
+    "SawCut_Recht": 0.50,
+    "SawCut_Schuin": 0.90,
+    "HipRidgeCut": 1.50,
+    "Drill": 0.95,
+    "Slot": 1.90,
+    "Lap": 3.75,
+    "Toeslag_Schaven_m1": 1.25,
+    "Stelkosten_Schaven": 50.00,
+    "Stelkosten_Korten": 25.00
+}
+
+IGNORED_OPERATIONS = ['TextOutput', 'BvnMacro']
+
+# ==========================================
+# HULPFUNCTIES
+# ==========================================
+
+def extract_text_from_image(image_input):
     try:
-        image = Image.open(image_file)
-        # Converteer naar tekst
-        text = pytesseract.image_to_string(image, lang='eng') 
-        # 'eng' werkt vaak beter dan 'nld' zonder extra taalbestanden, 
-        # en houttermen zijn vaak toch universeel genoeg voor basis OCR.
-        return text
+        image = image_input if isinstance(image_input, Image.Image) else Image.open(image_input)
+        return pytesseract.image_to_string(image, lang='eng')
     except Exception as e:
-        return f"Error bij Tesseract OCR: {e}"
+        return f"OCR fout: {e}"
 
 def clean_data_with_perplexity(raw_text):
-    """Stuurt rommelige OCR tekst naar Perplexity om te ordenen."""
-    # Vul hier je key in (of gebruik st.secrets)
-    PERPLEXITY_API_KEY = st.secrets["PERPLEXITY_API_KEY"]
+    client = OpenAI(
+        api_key=st.secrets["PERPLEXITY_API_KEY"], 
+        base_url="https://api.perplexity.ai"
+    )
     
-    client = OpenAI(api_key=PERPLEXITY_API_KEY, base_url="https://api.perplexity.ai")
+    prompt = f"""Extract houtbestellingsgegevens uit deze OCR tekst en retourneer alleen valide JSON.
+    
+Formaat:
+[{{"Aantal": 5, "Omschrijving": "Vuren", "Dikte": 38, "Breedte": 140, "Lengte": 3000, "Toeslagen": "Schaven"}}]
 
-    prompt = f"""
-    Ik heb een OCR scan gemaakt van een houtbestelling. De tekst is rommelig.
-    Haal hier de relevante balken uit en formatteer het als JSON data.
-    
-    Zoek naar: Aantal, Omschrijving (bijv Vuren), Afmeting (Dikte x Breedte), Lengte.
-    Als je 'G10' of 'Geschaafd' ziet, zet 'Toeslag' op 'Schaven'.
-    
-    Rommelige tekst:
-    {raw_text[:3000]} (ingekort)
-    
-    Geef ALLEEN valide JSON terug in dit formaat:
-    [
-      {{"Aantal": 5, "Omschrijving": "Vuren", "Dikte": 38, "Breedte": 140, "Lengte": 3000, "Toeslagen": "Schaven"}}
-    ]
-    """
+Tekst:
+{raw_text[:3000]}"""
 
     try:
         response = client.chat.completions.create(
-            model="sonar-pro", # Slimste tekstmodel van Perplexity
+            model="sonar-pro",
             messages=[{"role": "user", "content": prompt}]
         )
         return response.choices[0].message.content
     except Exception as e:
-        return f"AI Error: {e}"
+        return f"AI fout: {e}"
+
+def parse_json_response(response_text):
+    try:
+        start = response_text.find('[')
+        end = response_text.rfind(']') + 1
+        return pd.read_json(response_text[start:end])
+    except Exception:
+        return None
+
+def extract_project_name(content, root):
+    job_node = root.find(".//Job")
+    project_naam = job_node.get("Project", "") if job_node else ""
+    
+    if not project_naam:
+        match = re.search(r'<!--\s*project:?\s*([A-Za-z0-9-]+)', content, re.IGNORECASE)
+        project_naam = match.group(1) if match else "Onbekend"
+    
+    return project_naam
+
+def vereist_schaven(width, height, tekst):
+    for code in SCHAAF_CODES:
+        if code in tekst.upper():
+            return True, f"Code {code}"
+    
+    for dim in STANDAARD_RUW_MATEN:
+        if (abs(width - dim[0]) < 1.0 and abs(height - dim[1]) < 1.0) or \
+           (abs(width - dim[1]) < 1.0 and abs(height - dim[0]) < 1.0):
+            return False, ""
+    
+    return True, "Afwijkende Maat"
+
+def parse_operations(operations_container):
+    if operations_container is None:
+        return []
+    
+    ops = []
+    for op in operations_container:
+        if op.tag in IGNORED_OPERATIONS:
+            continue
+        
+        if op.tag == 'SawCut':
+            angle = float(op.get('Angle', 90))
+            bevel = float(op.get('Bevel', 90))
+            ops.append("SawCut_Recht" if abs(angle - 90.0) < 0.1 and abs(bevel - 90.0) < 0.1 else "SawCut_Schuin")
+        else:
+            ops.append(op.tag)
+    
+    return ops
+
+def parse_bvx_data(root, content):
+    project_naam = extract_project_name(content, root)
+    parts_data = []
+    
+    for part in root.findall('.//Part'):
+        qty = int(part.get('ReqQuantity', 1))
+        width = float(part.get('Width', 0))
+        height = float(part.get('Height', 0))
+        length = float(part.get('Length', 0))
+        
+        full_text = f"{part.get('Name', '')} {part.get('Grade', '')} {part.get('Comments', '')}"
+        
+        operations = parse_operations(part.find('Operations'))
+        moet_schaven, schaafreden = vereist_schaven(width, height, full_text)
+        
+        parts_data.append({
+            "Positie": part.get('Name', ''),
+            "Aantal": qty,
+            "Dikte": width,
+            "Breedte": height,
+            "Lengte (mm)": round(length, 0),
+            "Kwaliteit": part.get('Grade', ''),
+            "Bewerkingen": ", ".join(set(operations)),
+            "Toeslagen": schaafreden if schaafreden else "-",
+            "Raw_Ops": operations,
+            "Moet_Schaven": moet_schaven,
+            "Meters": (length / 1000.0) * qty
+        })
+    
+    return pd.DataFrame(parts_data), project_naam
+
+def bereken_prijzen(df):
+    total_price = 0.0
+    heeft_schaafwerk = df['Moet_Schaven'].any()
+    
+    for _, row in df.iterrows():
+        line_cost = sum(PRIJZEN.get(op, 0.0) * row['Aantal'] for op in row['Raw_Ops'])
+        
+        if row['Moet_Schaven']:
+            line_cost += row['Meters'] * PRIJZEN['Toeslag_Schaven_m1']
+        
+        total_price += line_cost
+    
+    stelkosten = PRIJZEN['Stelkosten_Korten']
+    if heeft_schaafwerk:
+        stelkosten += PRIJZEN['Stelkosten_Schaven']
+    
+    return total_price + stelkosten, stelkosten, heeft_schaafwerk
+
+def process_pdf(uploaded_file):
+    images = convert_from_bytes(uploaded_file.getvalue())
+    full_text = ""
+    progress_bar = st.progress(0)
+    
+    for i, image in enumerate(images):
+        st.image(image, caption=f"Pagina {i+1}", width=700)
+        full_text += f"\n--- PAGINA {i+1} ---\n{extract_text_from_image(image)}"
+        progress_bar.progress((i + 1) / len(images))
+    
+    return full_text
+
+def process_ocr_result(raw_text):
+    if len(raw_text) < 10:
+        st.warning("Geen tekst gevonden.")
+        return
+    
+    with st.expander("Bekijk ruwe tekst"):
+        st.text(raw_text)
+    
+    st.info("🧠 Perplexity analyseert...")
+    json_response = clean_data_with_perplexity(raw_text)
+    
+    df = parse_json_response(json_response)
+    
+    if df is not None:
+        st.subheader("Gevonden Specificaties")
+        st.dataframe(df, use_container_width=True)
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button("Download CSV", csv, "scan_resultaat.csv", "text/csv")
+    else:
+        st.error("Kon data niet verwerken. AI Output:")
+        st.write(json_response)
 
 # ==========================================
-# 2. DE APPLICATIE
+# STYLING
 # ==========================================
 
-import streamlit as st
-import xml.etree.ElementTree as ET
-import pandas as pd
+st.set_page_config(page_title="Heuvelman Hout Calculator", page_icon="🪵", layout="wide")
 
-# ---------------------------------------------------------
-# STYLING CONFIGURATIE (HEUVELMAN HOUT STIJL)
-# ---------------------------------------------------------
-st.set_page_config(
-    page_title="Heuvelman Hout Calculator", 
-    page_icon="🪵", 
-    layout="wide"
-)
-
-# Custom CSS voor de Heuvelman "Look & Feel"
 st.markdown("""
-    <style>
-    /* 1. Header Balk (Blauw met Geel accent) */
-    .header-container {
-        background-color: #003366;
-        padding: 20px;
-        border-bottom: 5px solid #FFCC00;
-        margin-bottom: 30px;
-        border-radius: 5px;
-        color: white;
-    }
-    
-    /* Logo Tekst Styling */
-    .logo-main {
-        font-size: 32px;
-        font-weight: 800;
-        color: #FFCC00; /* Geel */
-        font-family: 'Arial Black', sans-serif;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-    }
-    .logo-sub {
-        color: white;
-        font-size: 18px;
-        font-weight: 400;
-        margin-left: 10px;
-    }
-
-    /* 2. Algemene Typografie */
-    h1, h2, h3 {
-        color: #003366 !important; /* Donkerblauw */
-        font-family: 'Helvetica', 'Arial', sans-serif;
-        font-weight: 700;
-    }
-    
-    /* 3. Knoppen (Geel met Blauwe tekst) */
-    div.stButton > button {
-        background-color: #FFCC00;
-        color: #003366;
-        border-radius: 0px; /* Strakke hoeken zoals screenshot */
-        border: none;
-        padding: 10px 24px;
-        font-weight: bold;
-        text-transform: uppercase;
-    }
-    div.stButton > button:hover {
-        background-color: #E6B800;
-        color: #003366;
-    }
-
-    /* 4. Tabellen Styling */
-    thead tr th {
-        background-color: #003366 !important;
-        color: white !important;
-    }
-    
-    /* 5. File Uploader */
-    [data-testid="stFileUploader"] {
-        border: 2px dashed #003366;
-        background-color: #F4F8FB; /* Heel lichtblauw */
-    }
-    
-    /* 6. Metrics waarde kleur */
-    [data-testid="stMetricValue"] {
-        color: #003366;
-    }
-    
-    /* 7. Footer lijntje */
-    hr {
-        border-top: 2px solid #FFCC00;
-    }
-    </style>
+<style>
+.header-container {
+    background-color: #003366;
+    padding: 20px;
+    border-bottom: 5px solid #FFCC00;
+    margin-bottom: 30px;
+    border-radius: 5px;
+    color: white;
+}
+.logo-main {
+    font-size: 32px;
+    font-weight: 800;
+    color: #FFCC00;
+    font-family: 'Arial Black', sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+.logo-sub {
+    color: white;
+    font-size: 18px;
+    font-weight: 400;
+    margin-left: 10px;
+}
+h1, h2, h3 {
+    color: #003366 !important;
+    font-family: 'Helvetica', 'Arial', sans-serif;
+    font-weight: 700;
+}
+div.stButton > button {
+    background-color: #FFCC00;
+    color: #003366;
+    border-radius: 0px;
+    border: none;
+    padding: 10px 24px;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+div.stButton > button:hover {
+    background-color: #E6B800;
+}
+thead tr th {
+    background-color: #003366 !important;
+    color: white !important;
+}
+[data-testid="stFileUploader"] {
+    border: 2px dashed #003366;
+    background-color: #F4F8FB;
+}
+[data-testid="stMetricValue"] {
+    color: #003366;
+}
+hr {
+    border-top: 2px solid #FFCC00;
+}
+</style>
 """, unsafe_allow_html=True)
 
-# ---------------------------------------------------------
-# HEADER (LOGO NAGEBOUWD IN HTML)
-# ---------------------------------------------------------
+# ==========================================
+# HOOFDAPPLICATIE
+# ==========================================
+
 st.markdown("""
-    <div class="header-container">
-        <div style="display: flex; align-items: center;">
-            <!-- Simpel H-Logo Icoon met CSS -->
-            <div style="
-                background-color: #FFCC00; 
-                width: 50px; 
-                height: 50px; 
-                display: flex; 
-                align-items: center; 
-                justify-content: center; 
-                margin-right: 15px;
-                font-size: 30px;
-                font-weight: bold;
-                color: #003366;
-            ">H</div>
-            <div>
-                <span class="logo-main">HEUVELMAN</span><br>
-                <span class="logo-sub">maakt hout mooier</span>
-            </div>
+<div class="header-container">
+    <div style="display: flex; align-items: center;">
+        <div style="background-color: #FFCC00; width: 50px; height: 50px; display: flex; 
+                    align-items: center; justify-content: center; margin-right: 15px; 
+                    font-size: 30px; font-weight: bold; color: #003366;">H</div>
+        <div>
+            <span class="logo-main">HEUVELMAN</span><br>
+            <span class="logo-sub">maakt hout mooier</span>
         </div>
     </div>
+</div>
 """, unsafe_allow_html=True)
 
-# Pagina Titel (onder de header balk)
 st.title("Calculatie Tool")
-st.markdown("""
-    **We leveren niet zomaar hout: We leveren oplossingen.**  
-    Upload hieronder uw BVX-bestand voor een directe calculatie inclusief bewerkingen en toeslagen.
-""")
-# ... HIERONDER KOMT DE REST VAN JE BESTAANDE CODE (Vanaf uploaded_file = ...)
+st.markdown("**We leveren niet zomaar hout: We leveren oplossingen.**  \n"
+            "Upload uw BVX-bestand, afbeelding of PDF voor een directe calculatie.")
 
-
-# AANGEPASTE FILE UPLOADER
-uploaded_file = st.file_uploader("Sleep bestand hierheen", type=['bvx', 'xml', 'jpg', 'png', 'jpeg','pdf'])
+uploaded_file = st.file_uploader("Sleep bestand hierheen", type=['bvx', 'xml', 'jpg', 'png', 'jpeg', 'pdf'])
 
 if uploaded_file:
     file_type = uploaded_file.name.split('.')[-1].lower()
     
-    # === ROUTE 1: BESTAANDE BVX LOGICA (JE OUDE CODE) ===
     if file_type in ['bvx', 'xml']:
-        # ... HIER JE OUDE CODE VOOR XML LATEN STAAN ...
-        # (Dit is het stukje: content = uploaded_file.getvalue().decode... t/m de dataframe)
-        pass # Haal deze pass weg als je je oude code hier laat staan
-
-    # === ROUTE 2: NIEUWE FOTO LOGICA ===
-    elif file_type in ['jpg', 'png', 'jpeg']:
-        st.info("📸 Afbeelding aan het scannen met OCR...")
-            # === ROUTE 3: PDF BESTAND ===
-    elif file_type == 'pdf':
-        st.info("📄 PDF gedetecteerd. Pagina's omzetten naar beelden voor OCR...")
+        content = uploaded_file.getvalue().decode("utf-8", errors='ignore')
         
         try:
-            # 1. PDF omzetten naar lijst met afbeeldingen
-            images = convert_from_bytes(uploaded_file.getvalue())
+            root = ET.fromstring(content)
+            df, project_naam = parse_bvx_data(root, content)
+            total_price, stelkosten, heeft_schaafwerk = bereken_prijzen(df)
             
-            full_text = ""
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Project", project_naam)
+            c2.metric("Totaal Balken", df['Aantal'].sum())
+            c3.metric("Stelkosten", f"€ {stelkosten:.2f}")
+            c4.metric("Totaalprijs (excl. BTW)", f"€ {total_price:.2f}")
             
-            # 2. Progress bar (handig bij veel pagina's)
-            progress_bar = st.progress(0)
+            st.divider()
+            st.subheader("📋 Materiaalspecificatie & Bewerkingen")
             
-            for i, image in enumerate(images):
-                st.image(image, caption=f"Pagina {i+1}", width=700)
-                
-                # Hergebruik je bestaande Tesseract functie!
-                # We moeten de PIL image wel even opslaan in een tijdelijke buffer
-                # of de functie aanpassen. 
-                # MAKKELIJKER: Pas je extract_text_from_image functie iets aan (zie stap D).
-                
-                page_text = extract_text_from_image(image) 
-                full_text += f"\n--- PAGINA {i+1} ---\n" + page_text
-                
-                progress_bar.progress((i + 1) / len(images))
+            view_df = df[['Positie', 'Aantal', 'Dikte', 'Breedte', 'Lengte (mm)', 
+                          'Kwaliteit', 'Toeslagen', 'Bewerkingen']].copy()
             
-            st.success("Alle pagina's gescand!")
+            st.dataframe(
+                view_df.style.apply(
+                    lambda x: ['background-color: #fff4e5' if any(t in str(x['Toeslagen']) 
+                               for t in ['Code', 'Afwijkend']) else '' for _ in x], 
+                    axis=1
+                ), 
+                use_container_width=True
+            )
             
-            # 3. Nu de hele lap tekst naar Perplexity sturen
-            if len(full_text) > 20:
-                with st.expander("Bekijk ruwe tekst"):
-                    st.text(full_text)
-                
-                st.info("🧠 Perplexity analyseert nu alle pagina's...")
-                json_response = clean_data_with_perplexity(full_text)
-                
-                # ... (Dezelfde JSON parsing logica als bij Route 2) ...
-                # Je kunt de parsing code hieronder kopiëren van Route 2, 
-                # of er een aparte functie van maken om dubbele code te voorkomen.
-                
-                # Kopiëer hier het stukje 'try: ... df_ocr = ...' van Route 2
-                # Zorg dat je 'json_response' gebruikt.
-                 # Probeer de JSON in een tabel te gieten
-                try:
-                    import json
-                    start = json_response.find('[')
-                    end = json_response.rfind(']') + 1
-                    clean_json = json_response[start:end]
-                    
-                    df_ocr = pd.read_json(clean_json)
-                    
-                    st.subheader("Gevonden Specificaties (Uit PDF)")
-                    st.dataframe(df_ocr, use_container_width=True)
-                    
-                    csv = df_ocr.to_csv(index=False).encode('utf-8')
-                    st.download_button("Download CSV", csv, "pdf_scan_resultaat.csv", "text/csv")
-                    
-                except Exception as e:
-                    st.error("Kon PDF data niet verwerken. AI Output:")
-                    st.write(json_response)
-                    
+            if heeft_schaafwerk:
+                st.warning(f"⚠️ Let op: {df['Moet_Schaven'].sum()} regels vereisen schaven "
+                          f"(stelkosten €{PRIJZEN['Stelkosten_Schaven']:.2f} toegevoegd).")
+            
+            csv = view_df.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 Download Calculatie (CSV)", csv, 
+                             f"calculatie_{project_naam}.csv", "text/csv")
+        
         except Exception as e:
-            st.error(f"Fout bij verwerken PDF: {e}")
-
-        # 1. Tekst lezen (Lokaal)
-        raw_text = extract_text_from_image(uploaded_file)
-        
-        with st.expander("Bekijk ruwe gescande tekst"):
-            st.text(raw_text)
-            
-        if len(raw_text) > 10:
-            st.info("🧠 Perplexity is de data aan het structureren...")
-            
-            # 2. Structureren (Perplexity API)
-            json_response = clean_data_with_perplexity(raw_text)
-            
-            # Probeer de JSON in een tabel te gieten
-            try:
-                # Soms geeft AI extra tekst eromheen, we zoeken de JSON haakjes
-                import json
-                start = json_response.find('[')
-                end = json_response.rfind(']') + 1
-                clean_json = json_response[start:end]
-                
-                df_ocr = pd.read_json(clean_json)
-                
-                st.subheader("Gevonden Specificaties")
-                st.dataframe(df_ocr, use_container_width=True)
-                
-                # Download knopje erbij
-                csv = df_ocr.to_csv(index=False).encode('utf-8')
-                st.download_button("Download CSV", csv, "scan_resultaat.csv", "text/csv")
-                
-            except Exception as e:
-                st.error("Kon de data niet in een tabel zetten. Hier is wat de AI zei:")
-                st.write(json_response)
-        else:
-            st.warning("Kon geen tekst lezen op deze afbeelding.")
-def extract_text_from_image(image_input):
-    """Werkt met zowel een geüpload bestand ALS een direct PIL Image object."""
-    try:
-        # Check: Is het al een plaatje? (Zoals uit PDF komt)
-        if isinstance(image_input, Image.Image):
-            image = image_input
-        else:
-            # Nee, het is een geüpload bestand, dus openen
-            image = Image.open(image_input)
-            
-        text = pytesseract.image_to_string(image, lang='eng')
-        return text
-    except Exception as e:
-        return f"Error bij Tesseract: {e}"
-
-if uploaded_file:
-    # Bestand inlezen
-    content = uploaded_file.getvalue().decode("utf-8", errors='ignore')
+            st.error(f"Fout bij verwerken bestand: {e}")
     
-    try:
-        root = ET.fromstring(content)
-        
-        parts_data = []
-        # NIEUWE CODE (Die ook in commentaar zoekt)
-        import re
-        
-        # 1. Probeer eerst de standaard plek (Attribuut in <Job>)
-        job_node = root.find(".//Job")
-        project_naam = job_node.get("Project", "") if job_node is not None else ""
-        
-        # 2. Als hij leeg is, zoek dan in de commentaar-regels bovenin het bestand
-        if not project_naam:
-            # Zoek naar patronen zoals <!-- project: P250014 --> of <!-- project P250014 -->
-            match = re.search(r'<!--\s*project:?\s*([A-Za-z0-9-]+)', content, re.IGNORECASE)
-            if match:
-                project_naam = match.group(1)
-            else:
-                project_naam = "Onbekend"
-        
-        # Loop door alle onderdelen (Parts)
-        for part in root.findall('.//Part'):
-            # 1. Eigenschappen ophalen (Specificatie Vraag 1)
-            p_name = part.get('Name', '')
-            p_width = float(part.get('Width', 0))
-            p_height = float(part.get('Height', 0))
-            p_length = float(part.get('Length', 0))
-            p_qty = int(part.get('ReqQuantity', 1)) # Aantal stuks
-            p_grade = part.get('Grade', '') 
-            p_comments = part.get('Comments', '')
-            
-            # Combineer tekstvelden om te zoeken naar G10 codes
-            full_text_search = f"{p_name} {p_grade} {p_comments}".upper()
-            
-            # 2. Bewerkingen analyseren
-            ops_in_part = []
-            operations_container = part.find('Operations')
-            
-            if operations_container is not None:
-                for op in operations_container:
-                    tag = op.tag
-                    
-                    # Slimme detectie: Recht vs Schuin zagen
-                    if tag == 'SawCut':
-                        angle = float(op.get('Angle', 90))
-                        bevel = float(op.get('Bevel', 90))
-                        # Marge van 0.1 graad voor afronding
-                        if abs(angle - 90.0) < 0.1 and abs(bevel - 90.0) < 0.1:
-                            code = "SawCut_Recht"
-                        else:
-                            code = "SawCut_Schuin"
-                    elif tag in ['TextOutput', 'BvnMacro']:
-                        continue # Negeren
-                    else:
-                        code = tag # Overige (Drill, HipRidge, Lap, etc)
-                    
-                    ops_in_part.append(code)
-
-            # 3. LOGICA VRAAG 2: Schaven & Toeslagen
-            toeslagen = []
-            moet_schaven = False
-            
-            # Check A: Zit er een G10 code in?
-            for code in SCHAAF_CODES:
-                if code in full_text_search:
-                    moet_schaven = True
-                    toeslagen.append(f"Code {code}")
-                    break
-            
-            # Check B: Wijkt de maat af van standaard?
-            # We checken of (width, height) OF (height, width) in de lijst staat (hout kan gedraaid zijn)
-            is_standaard = False
-            for dim in STANDAARD_RUW_MATEN:
-                if (abs(p_width - dim[0]) < 1.0 and abs(p_height - dim[1]) < 1.0) or \
-                   (abs(p_width - dim[1]) < 1.0 and abs(p_height - dim[0]) < 1.0):
-                    is_standaard = True
-                    break
-            
-            if not is_standaard and not moet_schaven:
-                moet_schaven = True
-                toeslagen.append("Afwijkende Maat")
-
-            # Data opslaan
-            parts_data.append({
-                "Positie": p_name,
-                "Aantal": p_qty,
-                "Dikte": p_width,
-                "Breedte": p_height,
-                "Lengte (mm)": round(p_length, 0),
-                "Kwaliteit": p_grade,
-                "Bewerkingen": ", ".join(set(ops_in_part)),
-                "Toeslagen": ", ".join(toeslagen) if toeslagen else "-",
-                "Raw_Ops": ops_in_part,
-                "Moet_Schaven": moet_schaven,
-                "Meters": (p_length / 1000.0) * p_qty # Voor prijscalculatie
-            })
-
-        # DataFrame maken
-        df = pd.DataFrame(parts_data)
-        
-        # ==========================================
-        # 3. PRIJS BEREKENING
-        # ==========================================
-        total_price = 0.0
-        details_log = []
-        
-        # Variabelen voor stelkosten
-        heeft_schaafwerk = df['Moet_Schaven'].any()
-        heeft_zaagwerk = True # Nagenoeg altijd waar bij BVX
-        
-        # A. Regelkosten (Materiaal + Bewerking)
-        for idx, row in df.iterrows():
-            line_cost = 0.0
-            qty = row['Aantal']
-            
-            # 1. Bewerkingskosten
-            for op in row['Raw_Ops']:
-                line_cost += PRIJZEN.get(op, 0.0) * qty
-            
-            # 2. Schaafkosten (Per meter of per stuk? Hier per m1 gedaan)
-            if row['Moet_Schaven']:
-                line_cost += row['Meters'] * PRIJZEN['Toeslag_Schaven_m1']
-            
-            total_price += line_cost
-            
-        # B. Stelkosten (Eenmalig per project)
-        stelkosten = 0.0
-        if heeft_zaagwerk:
-            stelkosten += PRIJZEN['Stelkosten_Korten']
-        if heeft_schaafwerk:
-            stelkosten += PRIJZEN['Stelkosten_Schaven']
-            
-        total_price += stelkosten
-
-        # ==========================================
-        # 4. DASHBOARD WEERGAVE
-        # ==========================================
-        
-        # KPI's
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Project", project_naam)
-        c2.metric("Totaal Balken", df['Aantal'].sum())
-        c3.metric("Stelkosten", f"€ {stelkosten:.2f}")
-        c4.metric("Totaalprijs (excl. BTW)", f"€ {total_price:.2f}")
-        
-        st.divider()
-        
-        # VRAAG 1: Specificatie Lijst
-        st.subheader("📋 Materiaalspecificatie & Bewerkingen")
-        
-        # We maken een mooie tabel voor de klant
-        view_df = df[['Positie', 'Aantal', 'Dikte', 'Breedte', 'Lengte (mm)', 'Kwaliteit', 'Toeslagen', 'Bewerkingen']].copy()
-        
-        # Highlight regels met schaafwerk
-        st.dataframe(view_df.style.apply(lambda x: ['background-color: #fff4e5' if 'Code' in str(x['Toeslagen']) or 'Afwijkend' in str(x['Toeslagen']) else '' for i in x], axis=1), use_container_width=True)
-        
-        # VRAAG 2: Nettomaten controle
-        if heeft_schaafwerk:
-            st.warning(f"⚠️ Let op: Er zijn {df['Moet_Schaven'].sum()} regels die geschaafd moeten worden (G10 code of afwijkende maat). Stelkosten à €{PRIJZEN['Stelkosten_Schaven']} zijn toegevoegd.")
-        
-        # Export knop
-        csv = view_df.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Download Calculatie (CSV)", csv, f"calculatie_{project_naam}.csv", "text/csv")
-
-    except Exception as e:
-        st.error(f"Er ging iets mis bij het lezen van het bestand: {e}")
-
+    elif file_type == 'pdf':
+        st.info("📄 PDF wordt verwerkt...")
+        try:
+            full_text = process_pdf(uploaded_file)
+            st.success("Alle pagina's gescand!")
+            process_ocr_result(full_text)
+        except Exception as e:
+            st.error(f"PDF fout: {e}")
+    
+    elif file_type in ['jpg', 'png', 'jpeg']:
+        st.info("📸 Afbeelding wordt gescand...")
+        raw_text = extract_text_from_image(uploaded_file)
+        process_ocr_result(raw_text)
