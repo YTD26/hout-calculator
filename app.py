@@ -98,10 +98,13 @@ def vereist_schaven(width, height, tekst):
     return True, "Afwijkende Maat"
 
 def parse_operations(operations_container):
+    """Tel bewerkingen per type voor nauwkeurige prijsberekening."""
     if operations_container is None:
-        return []
+        return [], {}
     
-    ops = []
+    ops_list = []
+    ops_count = {}
+    
     for op in operations_container:
         if op.tag in IGNORED_OPERATIONS:
             continue
@@ -109,11 +112,20 @@ def parse_operations(operations_container):
         if op.tag == 'SawCut':
             angle = float(op.get('Angle', 90))
             bevel = float(op.get('Bevel', 90))
-            ops.append("SawCut_Recht" if abs(angle - 90.0) < 0.1 and abs(bevel - 90.0) < 0.1 else "SawCut_Schuin")
+            code = "SawCut_Recht" if abs(angle - 90.0) < 0.1 and abs(bevel - 90.0) < 0.1 else "SawCut_Schuin"
         else:
-            ops.append(op.tag)
+            code = op.tag
+        
+        ops_list.append(code)
+        ops_count[code] = ops_count.get(code, 0) + 1
     
-    return ops
+    return ops_list, ops_count
+
+def format_operations(ops_count):
+    """Maak leesbare string zoals 'SawCut_Recht (2x), Lap (1x)'."""
+    if not ops_count:
+        return "-"
+    return ", ".join([f"{op} ({count}x)" for op, count in ops_count.items()])
 
 def parse_bvx_data(root, content):
     project_naam = extract_project_name(content, root)
@@ -127,7 +139,7 @@ def parse_bvx_data(root, content):
         
         full_text = f"{part.get('Name', '')} {part.get('Grade', '')} {part.get('Comments', '')}"
         
-        operations = parse_operations(part.find('Operations'))
+        operations, ops_count = parse_operations(part.find('Operations'))
         moet_schaven, schaafreden = vereist_schaven(width, height, full_text)
         
         parts_data.append({
@@ -137,9 +149,10 @@ def parse_bvx_data(root, content):
             "Breedte": height,
             "Lengte (mm)": round(length, 0),
             "Kwaliteit": part.get('Grade', ''),
-            "Bewerkingen": ", ".join(set(operations)),
+            "Bewerkingen": format_operations(ops_count),
             "Toeslagen": schaafreden if schaafreden else "-",
             "Raw_Ops": operations,
+            "Ops_Count": ops_count,
             "Moet_Schaven": moet_schaven,
             "Meters": (length / 1000.0) * qty
         })
@@ -147,11 +160,16 @@ def parse_bvx_data(root, content):
     return pd.DataFrame(parts_data), project_naam
 
 def bereken_prijzen(df):
+    """Berekent prijzen op basis van daadwerkelijk aantal bewerkingen."""
     total_price = 0.0
     heeft_schaafwerk = df['Moet_Schaven'].any()
     
     for _, row in df.iterrows():
-        line_cost = sum(PRIJZEN.get(op, 0.0) * row['Aantal'] for op in row['Raw_Ops'])
+        line_cost = 0.0
+        qty = row['Aantal']
+        
+        for op, count in row['Ops_Count'].items():
+            line_cost += PRIJZEN.get(op, 0.0) * count * qty
         
         if row['Moet_Schaven']:
             line_cost += row['Meters'] * PRIJZEN['Toeslag_Schaven_m1']
