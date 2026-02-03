@@ -142,6 +142,9 @@ def parse_bvx_data(root, content):
         operations, ops_count = parse_operations(part.find('Operations'))
         moet_schaven, schaafreden = vereist_schaven(width, height, full_text)
         
+        # Tel totaal aantal zaagbewerkingen per balk
+        aantal_zaagsnedes = ops_count.get('SawCut_Recht', 0) + ops_count.get('SawCut_Schuin', 0)
+        
         parts_data.append({
             "Positie": part.get('Name', ''),
             "Aantal": qty,
@@ -149,6 +152,7 @@ def parse_bvx_data(root, content):
             "Breedte": height,
             "Lengte (mm)": round(length, 0),
             "Kwaliteit": part.get('Grade', ''),
+            "Zaagsnedes": aantal_zaagsnedes,
             "Bewerkingen": format_operations(ops_count),
             "Toeslagen": schaafreden if schaafreden else "-",
             "Raw_Ops": operations,
@@ -325,7 +329,7 @@ if uploaded_file:
             st.subheader("📋 Materiaalspecificatie & Bewerkingen")
             
             view_df = df[['Positie', 'Aantal', 'Dikte', 'Breedte', 'Lengte (mm)', 
-                          'Kwaliteit', 'Toeslagen', 'Bewerkingen']].copy()
+                          'Kwaliteit', 'Zaagsnedes', 'Bewerkingen', 'Toeslagen']].copy()
             
             st.dataframe(
                 view_df.style.apply(
@@ -360,3 +364,4 @@ if uploaded_file:
         st.info("📸 Afbeelding wordt gescand...")
         raw_text = extract_text_from_image(uploaded_file)
         process_ocr_result(raw_text)
+
