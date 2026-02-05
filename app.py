@@ -26,6 +26,8 @@ PRIJZEN = {
     "Drill": 0.95,
     "Slot": 1.90,
     "Lap": 3.75,
+    "BirdsMouth": 2.50,
+    "Neig": 1.80,
     "Toeslag_Schaven_m1": 1.25,
     "Stelkosten_Schaven": 50.00,
     "Stelkosten_Korten": 25.00
@@ -142,8 +144,18 @@ def parse_bvx_data(root, content):
         operations, ops_count = parse_operations(part.find('Operations'))
         moet_schaven, schaafreden = vereist_schaven(width, height, full_text)
         
-        # Tel totaal aantal zaagbewerkingen per balk
-        aantal_zaagsnedes = ops_count.get('SawCut_Recht', 0) + ops_count.get('SawCut_Schuin', 0)
+        # Elke bewerking krijgt eigen kolom
+        sawcut_recht = ops_count.get('SawCut_Recht', 0)
+        sawcut_schuin = ops_count.get('SawCut_Schuin', 0)
+        lap = ops_count.get('Lap', 0)
+        birdsmouth = ops_count.get('BirdsMouth', 0)
+        neig = ops_count.get('Neig', 0)
+        hipridgecut = ops_count.get('HipRidgeCut', 0)
+        drill = ops_count.get('Drill', 0)
+        slot = ops_count.get('Slot', 0)
+        
+        # Totaal: ALLEEN Schuin, Lap, BirdsMouth, Neig (NIET SawCut_Recht, NIET HipRidgeCut)
+        totaal_bewerkingen = sawcut_schuin + lap + birdsmouth + neig
         
         parts_data.append({
             "Positie": part.get('Name', ''),
@@ -152,8 +164,15 @@ def parse_bvx_data(root, content):
             "Breedte": height,
             "Lengte (mm)": round(length, 0),
             "Kwaliteit": part.get('Grade', ''),
-            "Zaagsnedes": aantal_zaagsnedes,
-            "Bewerkingen": format_operations(ops_count),
+            "SawCut_Recht": sawcut_recht,
+            "SawCut_Schuin": sawcut_schuin,
+            "Lap": lap,
+            "BirdsMouth": birdsmouth,
+            "Neig": neig,
+            "HipRidgeCut": hipridgecut,
+            "Drill": drill,
+            "Slot": slot,
+            "Totaal": totaal_bewerkingen,
             "Toeslagen": schaafreden if schaafreden else "-",
             "Raw_Ops": operations,
             "Ops_Count": ops_count,
@@ -329,7 +348,8 @@ if uploaded_file:
             st.subheader("📋 Materiaalspecificatie & Bewerkingen")
             
             view_df = df[['Positie', 'Aantal', 'Dikte', 'Breedte', 'Lengte (mm)', 
-                          'Kwaliteit', 'Zaagsnedes', 'Bewerkingen', 'Toeslagen']].copy()
+                          'Kwaliteit', 'SawCut_Recht', 'SawCut_Schuin', 'Lap', 'BirdsMouth', 
+                          'Neig', 'HipRidgeCut', 'Drill', 'Slot', 'Totaal', 'Toeslagen']].copy()
             
             st.dataframe(
                 view_df.style.apply(
@@ -364,4 +384,3 @@ if uploaded_file:
         st.info("📸 Afbeelding wordt gescand...")
         raw_text = extract_text_from_image(uploaded_file)
         process_ocr_result(raw_text)
-
