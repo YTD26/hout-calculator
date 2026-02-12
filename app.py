@@ -4,6 +4,7 @@ import pandas as pd
 import pytesseract
 import json
 import re
+from io import BytesIO
 from PIL import Image
 from pdf2image import convert_from_bytes
 from openai import OpenAI
@@ -19,7 +20,8 @@ STANDAARD_RUW_MATEN = [
 
 SCHAAF_CODES = ["G10-1", "G10-5", "GESCHAAFD"]
 
-PRIJZEN = {
+# Standaard prijzen - kunnen aangepast worden via sidebar
+DEFAULT_PRIJZEN = {
     "SawCut_Recht": 0.50,
     "SawCut_Schuin": 0.90,
     "HipRidgeCut": 1.50,
@@ -34,6 +36,38 @@ PRIJZEN = {
 }
 
 IGNORED_OPERATIONS = ['TextOutput', 'BvnMacro']
+
+# ==========================================
+# PRIJZEN CONNECTOR FUNCTIES
+# ==========================================
+
+def load_prices_from_external_source():
+    """
+    Placeholder functie voor externe prijzen connector.
+    Kan later uitgebreid worden met:
+    - API call naar prijzendatabase
+    - Lezen van externe configuratie file
+    - Database connectie
+    - Per-klant prijzen uit CRM systeem
+    """
+    # TODO: Implementeer externe prijzen connector hier
+    # Bijvoorbeeld:
+    # - API: requests.get("https://api.example.com/prijzen")
+    # - Database: cursor.execute("SELECT * FROM prijzen WHERE klant_id = ?")
+    # - File: json.load(open("klant_prijzen.json"))
+    
+    return None  # Geeft None als er geen externe prijzen zijn
+
+def get_active_prices():
+    """
+    Haalt actieve prijzen op uit session state of gebruikt defaults.
+    """
+    if 'custom_prijzen' not in st.session_state:
+        # Probeer eerst externe prijzen te laden
+        external_prices = load_prices_from_external_source()
+        st.session_state.custom_prijzen = external_prices if external_prices else DEFAULT_PRIJZEN.copy()
+    
+    return st.session_state.custom_prijzen
 
 # ==========================================
 # HULPFUNCTIES
@@ -157,6 +191,9 @@ def parse_bvx_data(root, content):
         # Totaal: ALLEEN Schuin, Lap, BirdsMouth, Neig (NIET SawCut_Recht, NIET HipRidgeCut)
         totaal_bewerkingen = sawcut_schuin + lap + birdsmouth + neig
         
+        # NIEUW: Totaal bewerkingen × aantal balken
+        totaal_bewerkingen_stuks = totaal_bewerkingen * qty
+        
         parts_data.append({
             "Positie": part.get('Name', ''),
             "Aantal": qty,
@@ -173,6 +210,7 @@ def parse_bvx_data(root, content):
             "Drill": drill,
             "Slot": slot,
             "Totaal": totaal_bewerkingen,
+            "Totaal Bewerkingen (stuks)": totaal_bewerkingen_stuks,  # NIEUWE KOLOM
             "Toeslagen": schaafreden if schaafreden else "-",
             "Raw_Ops": operations,
             "Ops_Count": ops_count,
@@ -182,7 +220,7 @@ def parse_bvx_data(root, content):
     
     return pd.DataFrame(parts_data), project_naam
 
-def bereken_prijzen(df):
+def bereken_prijzen(df, prijzen):
     """Berekent prijzen op basis van daadwerkelijk aantal bewerkingen."""
     total_price = 0.0
     heeft_schaafwerk = df['Moet_Schaven'].any()
@@ -192,18 +230,51 @@ def bereken_prijzen(df):
         qty = row['Aantal']
         
         for op, count in row['Ops_Count'].items():
-            line_cost += PRIJZEN.get(op, 0.0) * count * qty
+            line_cost += prijzen.get(op, 0.0) * count * qty
         
         if row['Moet_Schaven']:
-            line_cost += row['Meters'] * PRIJZEN['Toeslag_Schaven_m1']
+            line_cost += row['Meters'] * prijzen['Toeslag_Schaven_m1']
         
         total_price += line_cost
     
-    stelkosten = PRIJZEN['Stelkosten_Korten']
+    stelkosten = prijzen['Stelkosten_Korten']
     if heeft_schaafwerk:
-        stelkosten += PRIJZEN['Stelkosten_Schaven']
+        stelkosten += prijzen['Stelkosten_Schaven']
     
     return total_price + stelkosten, stelkosten, heeft_schaafwerk
+
+def create_excel_download(df, project_naam):
+    """Maakt een Excel bestand met proper formatting."""
+    output = BytesIO()
+    
+    # Selecteer kolommen voor export
+    export_df = df[['Positie', 'Aantal', 'Dikte', 'Breedte', 'Lengte (mm)', 
+                    'Kwaliteit', 'SawCut_Recht', 'SawCut_Schuin', 'Lap', 'BirdsMouth', 
+                    'Neig', 'HipRidgeCut', 'Drill', 'Slot', 'Totaal', 
+                    'Totaal Bewerkingen (stuks)', 'Toeslagen']].copy()
+    
+    # Schrijf naar Excel met pandas ExcelWriter
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        export_df.to_excel(writer, index=False, sheet_name='Calculatie')
+        
+        # Haal worksheet op voor formatting
+        worksheet = writer.sheets['Calculatie']
+        
+        # Auto-width voor kolommen
+        for column in worksheet.columns:
+            max_length = 0
+            column_letter = column[0].column_letter
+            for cell in column:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            adjusted_width = min(max_length + 2, 50)
+            worksheet.column_dimensions[column_letter].width = adjusted_width
+    
+    output.seek(0)
+    return output
 
 def process_pdf(uploaded_file):
     images = convert_from_bytes(uploaded_file.getvalue())
@@ -304,6 +375,58 @@ hr {
 """, unsafe_allow_html=True)
 
 # ==========================================
+# SIDEBAR - PRIJZEN CONFIGURATIE
+# ==========================================
+
+with st.sidebar:
+    st.header("⚙️ Instellingen")
+    st.subheader("Prijzen Configuratie")
+    
+    # Informatie over prijzen
+    st.info("💡 **Tip:** Prijzen kunnen per klant verschillen. Pas hier de actieve prijzen aan.")
+    
+    # Toggle voor geavanceerde prijzen editor
+    show_price_editor = st.checkbox("Prijzen aanpassen", value=False)
+    
+    if show_price_editor:
+        st.markdown("---")
+        prijzen = get_active_prices()
+        
+        st.markdown("**Bewerkingen**")
+        prijzen['SawCut_Recht'] = st.number_input("SawCut Recht (€)", value=prijzen['SawCut_Recht'], min_value=0.0, step=0.05, format="%.2f")
+        prijzen['SawCut_Schuin'] = st.number_input("SawCut Schuin (€)", value=prijzen['SawCut_Schuin'], min_value=0.0, step=0.05, format="%.2f")
+        prijzen['HipRidgeCut'] = st.number_input("HipRidgeCut (€)", value=prijzen['HipRidgeCut'], min_value=0.0, step=0.05, format="%.2f")
+        prijzen['Drill'] = st.number_input("Drill (€)", value=prijzen['Drill'], min_value=0.0, step=0.05, format="%.2f")
+        prijzen['Slot'] = st.number_input("Slot (€)", value=prijzen['Slot'], min_value=0.0, step=0.05, format="%.2f")
+        prijzen['Lap'] = st.number_input("Lap (€)", value=prijzen['Lap'], min_value=0.0, step=0.05, format="%.2f")
+        prijzen['BirdsMouth'] = st.number_input("BirdsMouth (€)", value=prijzen['BirdsMouth'], min_value=0.0, step=0.05, format="%.2f")
+        prijzen['Neig'] = st.number_input("Neig (€)", value=prijzen['Neig'], min_value=0.0, step=0.05, format="%.2f")
+        
+        st.markdown("---")
+        st.markdown("**Toeslagen**")
+        prijzen['Toeslag_Schaven_m1'] = st.number_input("Toeslag Schaven per meter (€)", value=prijzen['Toeslag_Schaven_m1'], min_value=0.0, step=0.05, format="%.2f")
+        
+        st.markdown("---")
+        st.markdown("**Stelkosten**")
+        prijzen['Stelkosten_Schaven'] = st.number_input("Stelkosten Schaven (€)", value=prijzen['Stelkosten_Schaven'], min_value=0.0, step=5.0, format="%.2f")
+        prijzen['Stelkosten_Korten'] = st.number_input("Stelkosten Korten (€)", value=prijzen['Stelkosten_Korten'], min_value=0.0, step=5.0, format="%.2f")
+        
+        # Reset knop
+        if st.button("↻ Reset naar standaard prijzen"):
+            st.session_state.custom_prijzen = DEFAULT_PRIJZEN.copy()
+            st.rerun()
+        
+        st.success("✅ Aangepaste prijzen actief")
+    else:
+        st.markdown("🔒 Standaard prijzen actief")
+    
+    st.markdown("---")
+    st.markdown("**Toekomstige features:**")
+    st.markdown("• API connectie voor prijzen")
+    st.markdown("• Per-klant prijzen database")
+    st.markdown("• Import/Export prijzen")
+
+# ==========================================
 # HOOFDAPPLICATIE
 # ==========================================
 
@@ -330,13 +453,16 @@ uploaded_file = st.file_uploader("Sleep bestand hierheen", type=['bvx', 'xml', '
 if uploaded_file:
     file_type = uploaded_file.name.split('.')[-1].lower()
     
+    # Haal actieve prijzen op
+    actieve_prijzen = get_active_prices()
+    
     if file_type in ['bvx', 'xml']:
         content = uploaded_file.getvalue().decode("utf-8", errors='ignore')
         
         try:
             root = ET.fromstring(content)
             df, project_naam = parse_bvx_data(root, content)
-            total_price, stelkosten, heeft_schaafwerk = bereken_prijzen(df)
+            total_price, stelkosten, heeft_schaafwerk = bereken_prijzen(df, actieve_prijzen)
             
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("Project", project_naam)
@@ -349,7 +475,8 @@ if uploaded_file:
             
             view_df = df[['Positie', 'Aantal', 'Dikte', 'Breedte', 'Lengte (mm)', 
                           'Kwaliteit', 'SawCut_Recht', 'SawCut_Schuin', 'Lap', 'BirdsMouth', 
-                          'Neig', 'HipRidgeCut', 'Drill', 'Slot', 'Totaal', 'Toeslagen']].copy()
+                          'Neig', 'HipRidgeCut', 'Drill', 'Slot', 'Totaal', 
+                          'Totaal Bewerkingen (stuks)', 'Toeslagen']].copy()
             
             st.dataframe(
                 view_df.style.apply(
@@ -362,11 +489,16 @@ if uploaded_file:
             
             if heeft_schaafwerk:
                 st.warning(f"⚠️ Let op: {df['Moet_Schaven'].sum()} regels vereisen schaven "
-                          f"(stelkosten €{PRIJZEN['Stelkosten_Schaven']:.2f} toegevoegd).")
+                          f"(stelkosten €{actieve_prijzen['Stelkosten_Schaven']:.2f} toegevoegd).")
             
-            csv = view_df.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Download Calculatie (CSV)", csv, 
-                             f"calculatie_{project_naam}.csv", "text/csv")
+            # Excel download knop
+            excel_data = create_excel_download(df, project_naam)
+            st.download_button(
+                label="📥 Download Calculatie (Excel)",
+                data=excel_data,
+                file_name=f"calculatie_{project_naam}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
         
         except Exception as e:
             st.error(f"Fout bij verwerken bestand: {e}")
