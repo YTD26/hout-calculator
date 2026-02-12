@@ -5,3 +5,4 @@ pytesseract
 numpy
 Pillow
 pdf2image
+openpyxl
