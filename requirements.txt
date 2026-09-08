@@ -1,7 +1,8 @@
 streamlit
 pandas
 openai
-pytesseract
+rapidocr
+onnxruntime
 numpy
 Pillow
 PyMuPDF
