@@ -1,6 +1,7 @@
 streamlit
 pandas
 openai
+opencv-python-headless
 rapidocr
 onnxruntime
 numpy
