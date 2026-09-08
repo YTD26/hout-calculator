@@ -1,7 +1,8 @@
 import streamlit as st
 import xml.etree.ElementTree as ET
 import pandas as pd
-import pytesseract
+import numpy as np
+from rapidocr import RapidOCR
 import json
 import re
 from io import BytesIO
@@ -73,10 +74,20 @@ def get_active_prices():
 # HULPFUNCTIES
 # ==========================================
 
+@st.cache_resource
+def get_ocr_engine():
+    """Laadt de RapidOCR engine eenmalig en cachet die tussen reruns."""
+    return RapidOCR()
+
 def extract_text_from_image(image_input):
     try:
         image = image_input if isinstance(image_input, Image.Image) else Image.open(image_input)
-        return pytesseract.image_to_string(image, lang='eng')
+        image_np = np.array(image.convert("RGB"))
+        engine = get_ocr_engine()
+        result = engine(image_np)
+        if result and result.txts:
+            return "\n".join(result.txts)
+        return ""
     except Exception as e:
         return f"OCR fout: {e}"
 
