@@ -6,7 +6,7 @@ import json
 import re
 from io import BytesIO
 from PIL import Image
-from pdf2image import convert_from_bytes
+import fitz  # PyMuPDF
 from openai import OpenAI
 
 # ==========================================
@@ -277,15 +277,25 @@ def create_excel_download(df, project_naam):
     return output
 
 def process_pdf(uploaded_file):
-    images = convert_from_bytes(uploaded_file.getvalue())
+    """Rendert PDF-pagina's naar afbeeldingen met PyMuPDF (geen poppler-utils nodig)."""
+    pdf_bytes = uploaded_file.getvalue()
+    pdf_document = fitz.open(stream=pdf_bytes, filetype="pdf")
     full_text = ""
     progress_bar = st.progress(0)
+    num_pages = len(pdf_document)
     
-    for i, image in enumerate(images):
+    zoom = 2.0  # ~144 DPI voor betere OCR-kwaliteit
+    matrix = fitz.Matrix(zoom, zoom)
+    
+    for i, page in enumerate(pdf_document):
+        pix = page.get_pixmap(matrix=matrix)
+        image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        
         st.image(image, caption=f"Pagina {i+1}", width=700)
         full_text += f"\n--- PAGINA {i+1} ---\n{extract_text_from_image(image)}"
-        progress_bar.progress((i + 1) / len(images))
+        progress_bar.progress((i + 1) / num_pages)
     
+    pdf_document.close()
     return full_text
 
 def process_ocr_result(raw_text):
