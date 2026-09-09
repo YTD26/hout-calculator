@@ -1,10 +1,10 @@
 streamlit
 pandas
 openai
-opencv-python-headless
 rapidocr
 onnxruntime
 numpy
 Pillow
 PyMuPDF
 openpyxl
+opencv-python-headless
