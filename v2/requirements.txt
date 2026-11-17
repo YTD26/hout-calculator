@@ -1,0 +1,5 @@
+# Vastgezette versies (getest met Python 3.12/3.13). Bijwerken = tests draaien.
+streamlit==1.67.0
+pandas==3.0.5
+openpyxl==3.1.5
+defusedxml==0.7.1

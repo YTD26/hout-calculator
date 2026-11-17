@@ -1,7 +1,16 @@
 [theme]
-primaryColor = "#FFCC00"       # Heuvelman Geel
-backgroundColor = "#FFFFFF"    # Wit
-secondaryBackgroundColor = "#F0F2F6" # Heel lichtgrijs voor zijbalken
-textColor = "#003366"          # Heuvelman Donkerblauw
+primaryColor = "#003366"               # Heuvelman Donkerblauw (accenten; knoppen zijn geel via CSS)
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F0F2F6"
+textColor = "#003366"
 font = "sans serif"
 
+[server]
+maxUploadSize = 20                     # MB, gelijk aan de controle in houtcalc/parser.py
+
+[client]
+showErrorDetails = false               # geen stacktraces naar gebruikers; details staan in de log
+toolbarMode = "viewer"
+
+[browser]
+gatherUsageStats = false

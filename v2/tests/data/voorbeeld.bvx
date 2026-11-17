@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Synthetisch testbestand: GEEN echte klantorder. Structuur afgeleid van v1-parser. -->
+<Project>
+  <Job Project="Testproject Schorrenweg" />
+  <Parts>
+    <Part Name="P1" ReqQuantity="4" Width="30" Height="170" Length="3000" Grade="C24">
+      <Operations><SawCut Angle="90" Bevel="90"/><SawCut Angle="45" Bevel="90"/><Lap/><Drill/><TextOutput/></Operations>
+    </Part>
+    <Part Name="P2" ReqQuantity="2" Width="30" Height="172" Length="2400" Grade="C24 G10-1">
+      <Operations><SawCut Angle="90" Bevel="90"/><SawCut Angle="90" Bevel="90"/><Pocket/></Operations>
+    </Part>
+    <Part Name="P3" ReqQuantity="10" Width="38" Height="140" Length="1000" Grade="C24">
+      <Operations/>
+    </Part>
+  </Parts>
+</Project>

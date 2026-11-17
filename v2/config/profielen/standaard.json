@@ -1,0 +1,16 @@
+{
+  "naam": "Standaard",
+  "bewerkingen": {
+    "SawCut_Recht": {"prijs": 0.50, "methode": "per_stuk"},
+    "SawCut_Schuin": {"prijs": 0.90, "methode": "per_stuk"},
+    "HipRidgeCut": {"prijs": 1.50, "methode": "per_stuk"},
+    "Lap": {"prijs": 3.75, "methode": "per_stuk"},
+    "BirdsMouth": {"prijs": 2.50, "methode": "per_stuk"},
+    "Neig": {"prijs": 1.80, "methode": "per_stuk"},
+    "Drill": {"prijs": 0.95, "methode": "per_stuk"},
+    "Slot": {"prijs": 1.90, "methode": "per_stuk"}
+  },
+  "toeslagen": {"schaven_m1": 1.25, "afwijkende_maat_m1": 1.25},
+  "stelkosten": {"schaven": 50.00, "korten": 25.00, "korten_regel": "bij_zaagsneden"},
+  "schaafcodes": ["G10-1", "G10-5", "GESCHAAFD"]
+}

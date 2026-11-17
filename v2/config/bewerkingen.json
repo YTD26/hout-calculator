@@ -1,0 +1,13 @@
+{
+  "_toelichting": "CONCEPT-namen, door Heuvelman te bevestigen. 'naam' is wat in scherm en Excel getoond wordt; de sleutel is de Hundegger-code uit het bestand.",
+  "bewerkingen": {
+    "SawCut_Recht": {"naam": "Recht afkorten"},
+    "SawCut_Schuin": {"naam": "Schuin afkorten"},
+    "HipRidgeCut": {"naam": "Gratsnede (HipRidgeCut)"},
+    "Lap": {"naam": "Keep / halfhouts (Lap)"},
+    "BirdsMouth": {"naam": "Vogelbek (BirdsMouth)"},
+    "Neig": {"naam": "Neig (naam n.t.b.)"},
+    "Drill": {"naam": "Boring"},
+    "Slot": {"naam": "Sleuf"}
+  }
+}
