@@ -189,3 +189,20 @@ def test_excel_export(resultaat, profiel):
     assert any(isinstance(v, str) and v.startswith("=SUBTOTAL(109,") for v in totaalrij)
     koppen = [c.value for c in ws[7]]
     assert "Recht afkorten" in koppen and "Pocket" in koppen
+
+
+def test_vergelijking_v1(profiel):
+    from houtcalc.vergelijking import vergelijk
+    # 28x70 is in v1 'afwijkend' (niet in ruwe-matenlijst); 38x140 niet. v2 zonder kopmatenlijst: geen toeslag.
+    xml = (b"<R><Part Name='A' ReqQuantity='2' Width='28' Height='70' Length='1000'><Operations><SawCut/>"
+           b"<BvnMacro Id='0402'/></Operations></Part>"
+           b"<Part Name='B' Width='38' Height='140' Length='1000'><Operations><SawCut/></Operations></Part></R>")
+    onderdelen = lees_bestand("a.bvx", xml).onderdelen
+    calc = bereken(onderdelen, profiel, {}, [])
+    v = vergelijk(onderdelen, profiel, calc)
+    t = v["tabel"].set_index("Post")
+    assert t.loc["Bewerkingen", "v1"] == pytest.approx(1.50) == t.loc["Bewerkingen", "v2"]
+    assert t.loc["Toeslag schaven / afwijkende maat", "v1"] == pytest.approx(2.50)  # 2 m x 1.25
+    assert v["totaal_v1"] == pytest.approx(1.50 + 2.50 + 50 + 25)
+    assert v["verschil"] == pytest.approx(calc.totaal - v["totaal_v1"])
+    assert v["regels_toeslag_v1"] == 1

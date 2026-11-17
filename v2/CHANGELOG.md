@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.0.2 (17-11-2026)
+- Onderaan de app: vergelijking met v1 (wat v1 voor hetzelfde bestand zou rekenen, per post en het verschil).
+
 ## 2.0.1 (17-11-2026)
 Na test met echt bestand P250014 (358 onderdelen, 1.092 delen, 28 elementen):
 - BvnMacro-bewerkingen worden geteld en gemeld (v1 negeerde er 145 in dit bestand).

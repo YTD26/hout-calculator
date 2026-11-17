@@ -21,6 +21,7 @@ from houtcalc import kopmaten as km
 from houtcalc.bewerkingen import laad_namen, weergavenaam
 from houtcalc.export import maak_excel
 from houtcalc.parser import ALLE_EXTENSIES, BestandFout, MAX_BESTANDSGROOTTE, lees_bestand
+from houtcalc.vergelijking import vergelijk
 from houtcalc.prijzen import (KORTEN_REGELS, METHODES, Prijsprofiel, ProfielFout, bereken,
                               laad_profielen)
 
@@ -422,3 +423,23 @@ st.download_button("📥 Download calculatie (Excel)", excel, file_name=f"calcul
                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 st.caption("De Excel bevat alle regels met filters op de kolomkoppen en een totaalrij die alleen de "
            "zichtbare (gefilterde) regels optelt, plus tabbladen Prijsopbouw en Info.")
+
+# ---------- Vergelijking met v1 ----------
+st.divider()
+st.subheader("Verschil met de vorige versie (v1)")
+vgl = vergelijk(resultaat.onderdelen, profiel(), calc)
+richting = "lager" if vgl["verschil"] < 0 else "hoger"
+st.markdown(
+    f"Voor dit bestand zou v1 **{euro(vgl['totaal_v1'])}** rekenen, v2 rekent **{euro(calc.totaal)}**: "
+    f"{euro(abs(vgl['verschil']))} {richting}. "
+    f"v1 gaf een toeslag op {vgl['regels_toeslag_v1']} van de {vgl['regels_totaal']} regels "
+    f"({getal(vgl['meters_toeslag_v1'])} m), omdat het netto maten vergeleek met een vaste lijst *ruwe* maten "
+    "met 1 mm speling. v2 vergelijkt met de standaard netto kopmatenlijst van Heuvelman (± "
+    f"{getal(ss.tolerantie)} mm) en rekent stelkosten korten alleen bij zaagsneden. "
+    + ("Die kopmatenlijst is nog niet ingevuld, dus v2 rekent nu geen toeslag voor afwijkende maat."
+       if not ss.kopmaten else "")
+)
+st.dataframe(vgl["tabel"].style.format({"v1": euro, "v2": euro, "Verschil": euro}),
+             width="stretch", hide_index=True)
+st.caption("Beide berekend met de prijzen uit het actieve profiel; alleen de rekenregels verschillen. "
+           "Macro-bewerkingen telde v1 niet mee.")
