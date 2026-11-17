@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.0.1 (17-11-2026)
+Na test met echt bestand P250014 (358 onderdelen, 1.092 delen, 28 elementen):
+- BvnMacro-bewerkingen worden geteld en gemeld (v1 negeerde er 145 in dit bestand).
+- Element-kolom en -filter (attribuut Unit).
+- Kopmatenlijst standaard leeg tot Heuvelman hem aanlevert (voorkwam ~€3.700 onterechte toeslag).
+- README: oorzaak "Project onbekend" gecorrigeerd (niet verklaard door dit bestand).
+
 ## 2.0.0 (17-11-2026)
 Eerste versie van v2, naast v1 gebouwd. Zie README voor de volledige lijst.
 - Filters, totaalrij (app + Excel SUBTOTAAL), Nederlandse bewerkingsnamen, kopmatenlijst ±2 mm,

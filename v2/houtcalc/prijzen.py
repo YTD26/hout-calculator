@@ -159,7 +159,7 @@ def bereken(onderdelen: list[Onderdeel], profiel: Prijsprofiel, namen: dict[str,
 
         per_deel = sum(o.bewerkingen.values())
         rij = {
-            "Positie": o.positie, "Aantal": o.aantal, "Dikte": o.dikte, "Breedte": o.breedte,
+            "Element": o.element, "Positie": o.positie, "Aantal": o.aantal, "Dikte": o.dikte, "Breedte": o.breedte,
             "Lengte (mm)": round(o.lengte), "Kwaliteit": o.kwaliteit,
         }
         for c in codes:

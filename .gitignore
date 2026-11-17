@@ -3,3 +3,10 @@ __pycache__/
 .pytest_cache/
 .streamlit/secrets.toml
 .venv/
+
+# Klantbestanden nooit in deze (openbare) repo
+*.bvx
+*.BVX
+*.hmm
+*.hmlx
+!v2/tests/data/voorbeeld.bvx

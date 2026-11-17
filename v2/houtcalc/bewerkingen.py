@@ -13,7 +13,9 @@ from pathlib import Path
 CONFIG_PAD = Path(__file__).resolve().parent.parent / "config" / "bewerkingen.json"
 
 # Elementen in <Operations> die geen bewerking zijn en dus niet geteld worden.
-GENEGEERDE_ELEMENTEN = {"TextOutput", "BvnMacro"}
+# BvnMacro is in v2 bewust NIET genegeerd: in echte bestanden (bv. P250014) staan
+# honderden macro's (Id 0402) die v1 stil wegliet. Ze worden geteld als BvnMacro_<Id>.
+GENEGEERDE_ELEMENTEN = {"TextOutput"}
 
 # Zaagsnede binnen deze afwijking (graden) van 90 telt als recht.
 HOEK_TOLERANTIE = 0.1
@@ -29,6 +31,8 @@ def classificeer(tag: str, attrib: dict[str, str]) -> str | None:
     """Zet een XML-element om naar een bewerkingscode, of None als het genegeerd wordt."""
     if tag in GENEGEERDE_ELEMENTEN:
         return None
+    if tag == "BvnMacro":
+        return f"BvnMacro_{(attrib.get('Id') or 'onbekend').strip()}"
     if tag == "SawCut":
         try:
             hoek = float(attrib.get("Angle", 90))

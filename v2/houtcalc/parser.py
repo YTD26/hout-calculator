@@ -40,6 +40,7 @@ class Onderdeel:
     kwaliteit: str
     tekst: str  # naam + kwaliteit + opmerkingen, gebruikt voor schaafcodes
     bewerkingen: dict[str, int] = field(default_factory=dict)
+    element: str = ""  # wand-/dakelement uit attribuut Unit (bv. BU-001)
 
 
 @dataclass
@@ -136,6 +137,7 @@ def lees_bestand(bestandsnaam: str, data: bytes) -> ParseResultaat:
                 kwaliteit=kwaliteit,
                 tekst=" ".join(filter(None, [part.get("Name"), kwaliteit, part.get("Comments")])),
                 bewerkingen=bewerkingen,
+                element=(part.get("Unit") or "").strip(),
             )
         )
 

@@ -79,7 +79,19 @@ def test_hoekclassificatie():
     assert classificeer("SawCut", {"Angle": "90", "Bevel": "90"}) == "SawCut_Recht"
     assert classificeer("SawCut", {"Angle": "60"}) == "SawCut_Schuin"
     assert classificeer("SawCut", {"Angle": "abc"}) == "SawCut_Schuin"
-    assert classificeer("BvnMacro", {}) is None
+    assert classificeer("TextOutput", {}) is None
+    # v1 liet macro's stil weg; v2 telt ze zodat ze zichtbaar zijn en geprijsd kunnen worden
+    assert classificeer("BvnMacro", {"Id": "0402"}) == "BvnMacro_0402"
+
+
+def test_element_en_macro_uit_bestand():
+    xml = (b"<!-- project: P1 --><Job><Parts><Part Name='H7' Unit='BU-001' ReqQuantity='2' Width='38' "
+           b"Height='235' Length='2591'><Operations><SawCut/><BvnMacro Id='0402'/><BvnMacro Id='0402'/>"
+           b"<TextOutput/></Operations></Part></Parts></Job>")
+    r = lees_bestand("a.bvx", xml)
+    o = r.onderdelen[0]
+    assert r.projectnaam == "P1" and o.element == "BU-001"
+    assert o.bewerkingen == {"SawCut_Recht": 1, "BvnMacro_0402": 2}
 
 
 # ---------- kopmaten ----------

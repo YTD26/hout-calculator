@@ -319,10 +319,8 @@ if calc.zonder_prijs:
                + ", ".join(namen_kol[c] for c in calc.zonder_prijs)
                + ". Ze zijn wel geteld, maar niet geprijsd. Vul een prijs in via *Prijzen bewerkingen*.")
 if not ss.kopmaten:
-    st.warning("Er is geen standaard kopmatenlijst ingesteld: afwijkende maten kunnen niet beoordeeld worden.")
-elif len(ss.kopmaten) < 3:
-    st.info(f"De kopmatenlijst bevat nu {len(ss.kopmaten)} maat/maten. Vul de lijst aan via de zijbalk, "
-            "anders worden veel maten als afwijkend gezien.")
+    st.info("Er is nog geen standaard kopmatenlijst ingesteld. Kopmaten worden daarom niet beoordeeld en er "
+            "wordt geen toeslag afwijkende maat gerekend. Vul de lijst in via de zijbalk.")
 if resultaat.waarschuwingen:
     with st.expander(f"⚠️ {len(resultaat.waarschuwingen)} waarschuwing(en) bij inlezen"):
         for w in resultaat.waarschuwingen:
@@ -340,6 +338,8 @@ m5.metric("Totaal excl. BTW", euro(calc.totaal))
 tab_onderdelen, tab_prijs = st.tabs(["Onderdelen & bewerkingen", "Prijsopbouw"])
 
 with tab_onderdelen:
+    elementen = sorted({e for e in r["Element"] if e})
+    filter_el = st.multiselect("Element(en)", elementen, placeholder="Alle elementen") if elementen else []
     f1, f2, f3, f4 = st.columns([1.2, 2, 1, 1.5])
     verberg_leeg = f1.toggle("Verberg 0-kolommen", value=True,
                              help="Bewerkingskolommen die in de selectie overal 0 zijn verbergen")
@@ -347,9 +347,11 @@ with tab_onderdelen:
     filter_bew = f2.multiselect("Alleen delen met bewerking", calc.bewerkingscodes, format_func=namen_kol.get,
                                 placeholder="Kies een of meer bewerkingen")
     filter_kop = f3.selectbox("Kopmaat", ["Alle", km.STANDAARD, km.AFWIJKEND, km.ONBEKEND])
-    zoek = f4.text_input("Zoek positie / kwaliteit")
+    zoek = f4.text_input("Zoek positie / element / kwaliteit")
 
     zicht = r.copy()
+    if filter_el:
+        zicht = zicht[zicht["Element"].isin(filter_el)]
     if alleen_met_bew:
         zicht = zicht[zicht["Bewerkingen per deel"] > 0]
     for c in filter_bew:
@@ -359,10 +361,11 @@ with tab_onderdelen:
     if zoek:
         zoek_l = zoek.lower()
         zicht = zicht[zicht["Positie"].str.lower().str.contains(zoek_l, regex=False)
+                      | zicht["Element"].str.lower().str.contains(zoek_l, regex=False)
                       | zicht["Kwaliteit"].str.lower().str.contains(zoek_l, regex=False)]
 
     bew_kol = [c for c in calc.bewerkingscodes if not (verberg_leeg and zicht[c].sum() == 0)]
-    kolommen = (["Positie", "Aantal", "Dikte", "Breedte", "Lengte (mm)", "Kwaliteit"] + bew_kol
+    kolommen = (["Element", "Positie", "Aantal", "Dikte", "Breedte", "Lengte (mm)", "Kwaliteit"] + bew_kol
                 + ["Bewerkingen per deel", "Bewerkingen totaal", "Kopmaat", "Toeslag", "Meters",
                    "Bedrag bewerkingen", "Bedrag toeslag", "Regeltotaal"])
     tabel = zicht[kolommen].rename(columns=namen_kol)
@@ -376,11 +379,12 @@ with tab_onderdelen:
                "Bedrag toeslag", "Regeltotaal"] + [namen_kol[c] for c in bew_kol]
     totaal = {c: (tabel[c].sum() if c in som_kol else None) for c in tabel.columns}
     totaal.update({k: "" for k in ("Dikte", "Breedte", "Lengte (mm)", "Kwaliteit", "Kopmaat", "Toeslag")})
-    totaal["Positie"] = f"TOTAAL ({len(tabel)} regels)"
+    totaal["Element"] = f"TOTAAL ({len(tabel)} regels)"
+    totaal["Positie"] = ""
     tabel_met_totaal = pd.concat([tabel, pd.DataFrame([totaal])], ignore_index=True)
 
     def kleur(rij):
-        if str(rij["Positie"]).startswith("TOTAAL"):
+        if str(rij["Element"]).startswith("TOTAAL"):
             return [f"background-color: {GEEL}; font-weight: bold"] * len(rij)
         if rij["Toeslag"]:
             return ["background-color: #fff4e5"] * len(rij)
