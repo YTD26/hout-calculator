@@ -206,3 +206,22 @@ def test_vergelijking_v1(profiel):
     assert v["totaal_v1"] == pytest.approx(1.50 + 2.50 + 50 + 25)
     assert v["verschil"] == pytest.approx(calc.totaal - v["totaal_v1"])
     assert v["regels_toeslag_v1"] == 1
+
+
+def test_teller_registreert_zonder_klantgegevens(tmp_path, resultaat):
+    from houtcalc import teller
+    reg = teller.maak_registratie("P250014_BU-001.BVX", 326_700, 358, 1092, resultaat.sha256, "test")
+    assert "P250014" not in str(reg)  # geen bestands- of projectnaam opgeslagen
+    assert reg.bestandstype == "bvx" and reg.grootte_kb == 319
+    pad = tmp_path / "uploads.jsonl"
+    assert teller.registreer(reg, pad=pad) == "bestand"
+    assert teller.registreer(reg, pad=pad) == "bestand"
+    rijen = teller.lees_lokaal(pad)
+    assert len(rijen) == 2 and rijen[0]["delen"] == 1092
+
+
+def test_teller_valt_terug_op_bestand_bij_databasefout(tmp_path, resultaat):
+    from houtcalc import teller
+    reg = teller.maak_registratie("a.bvx", 10, 1, 1, resultaat.sha256, "test")
+    # onbereikbare database: mag de app niet laten crashen
+    assert teller.registreer(reg, "http://127.0.0.1:9", "x", pad=tmp_path / "u.jsonl") == "bestand"

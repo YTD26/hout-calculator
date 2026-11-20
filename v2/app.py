@@ -22,6 +22,7 @@ from houtcalc.bewerkingen import laad_namen, weergavenaam
 from houtcalc.export import maak_excel
 from houtcalc.parser import ALLE_EXTENSIES, BestandFout, MAX_BESTANDSGROOTTE, lees_bestand
 from houtcalc.vergelijking import vergelijk
+from houtcalc import teller
 from houtcalc.prijzen import (KORTEN_REGELS, METHODES, Prijsprofiel, ProfielFout, bereken,
                               laad_profielen)
 
@@ -52,11 +53,15 @@ div.stButton > button:hover, div.stDownloadButton > button:hover {{ background-c
 # Toegang (optioneel wachtwoord via st.secrets["APP_WACHTWOORD"])
 # =====================================================================
 
-def _wachtwoord() -> str | None:
+def _secret(naam: str) -> str | None:
     try:
-        return st.secrets.get("APP_WACHTWOORD")
+        return st.secrets.get(naam)
     except Exception:  # geen secrets.toml aanwezig
         return None
+
+
+def _wachtwoord() -> str | None:
+    return _secret("APP_WACHTWOORD")
 
 
 def toegang_ok() -> bool:
@@ -141,6 +146,13 @@ if bestand is not None:
             ss.editor_versie += 1
             log.info("Ingelezen: %s (%d onderdelen, sha256 %s)", bestand.name, len(resultaat.onderdelen),
                      resultaat.sha256[:12])
+            # Gebruiksteller: 1 registratie per nieuw bestand per sessie, zonder klantgegevens
+            waar = teller.registreer(
+                teller.maak_registratie(bestand.name, len(bestand.getvalue()), len(resultaat.onderdelen),
+                                        sum(o.aantal for o in resultaat.onderdelen), resultaat.sha256,
+                                        __version__),
+                _secret("TELLER_SUPABASE_URL"), _secret("TELLER_SUPABASE_KEY"))
+            log.info("Upload geregistreerd (%s)", waar)
     except BestandFout as e:
         st.error(str(e))
     except Exception:

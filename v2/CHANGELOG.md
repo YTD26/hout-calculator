@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.3 (20-11-2026)
+- Gebruiksteller: elke nieuw ingelezen upload wordt geregistreerd (tijdstip, versie, bestandstype,
+  grootte, aantal regels/delen, SHA-256). Geen bestandsnaam, projectnaam of klantgegevens.
+
 ## 2.0.2 (17-11-2026)
 - Onderaan de app: vergelijking met v1 (wat v1 voor hetzelfde bestand zou rekenen, per post en het verschil).
 

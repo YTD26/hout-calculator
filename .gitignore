@@ -10,3 +10,6 @@ __pycache__/
 *.hmm
 *.hmlx
 !v2/tests/data/voorbeeld.bvx
+
+# Lokale gebruiksteller (alleen als er geen database is ingesteld)
+v2/data/

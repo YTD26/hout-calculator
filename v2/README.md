@@ -8,7 +8,7 @@ blijft ongewijzigd en blijft draaien.
 ```bash
 cd v2
 pip install -r requirements-dev.txt
-python -m pytest -q             # 34 tests
+python -m pytest -q             # 37 tests
 cd .. && streamlit run v2/app.py
 ```
 
@@ -55,6 +55,31 @@ handmatig aan te passen. Daarnaast is in v2 een `if element:`-truthiness-fout ui
 - Vastgezette versies van alle packages, unit- en rooktests, GitHub Actions-workflow `v2-tests`.
 - Rekenkern (`houtcalc/`) staat los van de interface. Te hergebruiken als dit naar TABS/In2CRM gaat.
 - OCR/Perplexity uit v1 zit bewust **niet** in v2: dat stuurde klantgegevens naar een externe AI-dienst.
+
+## Gebruiksteller
+Elke nieuw ingelezen upload wordt geregistreerd (`houtcalc/teller.py`): tijdstip (UTC), app-versie,
+bestandstype, grootte in kB, aantal regels en delen, en de SHA-256 van het bestand (om herhaalde
+uploads van hetzelfde bestand te herkennen). **Geen** bestandsnaam, projectnaam of klantgegevens.
+Eén registratie per bestand per sessie; filteren of instellingen wijzigen telt niet opnieuw.
+
+Opslag:
+- Met secrets `TELLER_SUPABASE_URL` en `TELLER_SUPABASE_KEY`: naar tabel `uploads` in die database (blijvend).
+- Zonder: naar `v2/data/uploads.jsonl`. **Op Streamlit Community Cloud verdwijnt dit bestand bij een herstart**,
+  dus voor betrouwbare cijfers is de database nodig.
+
+Tabel aanmaken (Supabase/PostgreSQL):
+```sql
+create table uploads (
+  id bigint generated always as identity primary key,
+  tijdstip timestamptz not null,
+  app_versie text, bestandstype text,
+  grootte_kb int, regels int, delen int, sha256 text
+);
+alter table uploads enable row level security;
+-- de app mag alleen toevoegen, niet lezen
+create policy "alleen invoegen" on uploads for insert to anon with check (true);
+```
+Uitlezen: `select count(*) as uploads, count(distinct sha256) as unieke_bestanden from uploads;`
 
 ## Aannames die Heuvelman moet bevestigen
 1. **Nederlandse namen** van de bewerkingen (`config/bewerkingen.json`), met name `Neig` en `HipRidgeCut`.
